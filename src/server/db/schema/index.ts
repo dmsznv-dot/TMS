@@ -1,2 +1,2 @@
-// Table definitions are added by the feature modules and re-exported here.
-export {};
+export * from "./org";
+export * from "./misc";
