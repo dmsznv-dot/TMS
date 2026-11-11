@@ -110,6 +110,7 @@ describe("import", () => {
     const { jobId } = await createImportJob(logist, { filename: "o.csv", bytes: THREE_ROWS, templateId });
     await validateImportJob(logist, jobId);
     expect(await listOrders(logist)).toEqual([]);
+    expect((await getImportJob(logist, jobId)).rowStats).toEqual({ pending: 0, valid: 3, error: 0, applied: 0 });
   });
 
   it("does not duplicate on a second upload of the same file", async () => {
@@ -119,6 +120,8 @@ describe("import", () => {
 
     expect(first.duplicateOfJobId).toBeNull();
     expect(second.duplicateOfJobId).toBe(first.jobId);
+    expect(second.job.duplicateOfJobId).toBe(first.jobId);
+    expect(first.job.duplicateOfJobId).toBeNull();
     expect(second.job.counts).toEqual({ added: 0, updated: 0, skipped: 3, errors: 0 });
     expect(await listOrders(logist)).toHaveLength(2);
   });

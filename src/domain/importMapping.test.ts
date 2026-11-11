@@ -153,3 +153,29 @@ describe("mapOrderRow", () => {
     expect(result.ok && result.value).toMatchObject({ weightKgMilli: null, priceKop: null, customerName: null });
   });
 });
+
+describe("suggestMapping", () => {
+  it("matches headers of the demo file to fields", async () => {
+    const { suggestMapping } = await import("./importMapping");
+    const headers = ["Номер заказа", "Получатель", "Точка", "Окно с", "Окно до", "Товар", "Ед.", "Количество", "Вес, кг", "Паллет", "Цена", "Себестоимость"];
+    expect(suggestMapping(headers)).toEqual({
+      number: "Номер заказа",
+      customerName: "Получатель",
+      locationKey: "Точка",
+      windowStart: "Окно с",
+      windowEnd: "Окно до",
+      product: "Товар",
+      unit: "Ед.",
+      qty: "Количество",
+      weightKg: "Вес, кг",
+      pallets: "Паллет",
+      priceRub: "Цена",
+      costRub: "Себестоимость",
+    });
+  });
+
+  it("ignores case and surrounding spaces and leaves unknown headers unmapped", async () => {
+    const { suggestMapping } = await import("./importMapping");
+    expect(suggestMapping([" КОЛ-ВО ", "Комментарий"])).toEqual({ qty: " КОЛ-ВО " });
+  });
+});

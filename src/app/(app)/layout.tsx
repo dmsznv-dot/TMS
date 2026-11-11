@@ -7,6 +7,7 @@ import { currentUser, requireCtx } from "@/server/auth/requireCtx";
 /** Navigation entries with the permission needed to see each one. */
 const NAV: (NavItem & { needs: Action })[] = [
   { href: "/planning", label: "Планирование", needs: "trips.read" },
+  { href: "/import", label: "Импорт", needs: "planning.write" },
   { href: "/refs", label: "Справочники", needs: "refs.read" },
 ];
 

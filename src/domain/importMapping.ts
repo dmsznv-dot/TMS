@@ -235,3 +235,41 @@ export function mapOrderRow(
     },
   };
 }
+
+const HEADER_SYNONYMS: Record<OrderField, string[]> = {
+  number: ["номер заказа", "номер", "заказ", "№ заказа"],
+  locationKey: ["точка", "код точки", "точка доставки", "адрес доставки"],
+  windowStart: ["окно с", "начало окна", "окно: начало"],
+  windowEnd: ["окно до", "конец окна", "окно: конец"],
+  qty: ["количество", "кол-во", "колво"],
+  lineKey: ["строка", "id строки", "идентификатор строки"],
+  product: ["товар", "номенклатура", "наименование"],
+  unit: ["ед.", "ед", "единица", "единица измерения"],
+  weightKg: ["вес, кг", "вес", "масса", "масса, кг"],
+  volumeM3: ["объём, м3", "объем, м3", "объём", "объем"],
+  pallets: ["паллет", "паллеты", "палл"],
+  customerName: ["получатель", "клиент", "контрагент"],
+  priceRub: ["цена", "цена за единицу"],
+  costRub: ["себестоимость"],
+};
+
+/** Proposes a column for each field whose usual name appears among the headers. */
+export function suggestMapping(headers: string[]): Partial<Record<OrderField, string>> {
+  const byName = new Map(headers.map((h) => [h.trim().toLowerCase(), h]));
+  const columns: Partial<Record<OrderField, string>> = {};
+  for (const field of ORDER_FIELDS) {
+    const header = HEADER_SYNONYMS[field].map((name) => byName.get(name)).find(Boolean);
+    if (header) columns[field] = header;
+  }
+  return columns;
+}
+
+/** Text of a stored cell for showing and editing in a form. */
+export function cellToText(value: unknown, format: DateFormat): string {
+  if (value == null) return "";
+  if (value instanceof Date) {
+    const d = { y: pad(value.getUTCFullYear(), 4), mo: pad(value.getUTCMonth() + 1), d: pad(value.getUTCDate()), h: pad(value.getUTCHours()), mi: pad(value.getUTCMinutes()) };
+    return format === "dd.MM.yyyy HH:mm" ? `${d.d}.${d.mo}.${d.y} ${d.h}:${d.mi}` : `${d.y}-${d.mo}-${d.d} ${d.h}:${d.mi}`;
+  }
+  return String(value);
+}

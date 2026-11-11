@@ -391,12 +391,35 @@ export async function getImportJob(ctx: Ctx, jobId: string) {
   requireCan(ctx, "trips.read");
   const job = await jobOf(ctx, jobId);
   const template = await templateOf(ctx, job.templateId);
-  const [{ n }] = await ctx.db
-    .select({ n: sql<number>`count(*)::int` })
+  const stats = await ctx.db
+    .select({ status: importRows.status, n: sql<number>`count(*)::int` })
     .from(importRows)
-    .where(eq(importRows.jobId, jobId));
+    .where(eq(importRows.jobId, jobId))
+    .groupBy(importRows.status);
+  const rowStats = { pending: 0, valid: 0, error: 0, applied: 0 };
+  for (const s of stats) rowStats[s.status] = s.n;
+  const n = rowStats.pending + rowStats.valid + rowStats.error + rowStats.applied;
+
+  const [earlier] = await ctx.db
+    .select({ id: importJobs.id })
+    .from(importJobs)
+    .where(
+      and(
+        eq(importJobs.orgId, ctx.orgId),
+        eq(importJobs.templateId, job.templateId),
+        eq(importJobs.fileSha256, job.fileSha256),
+        eq(importJobs.status, "done"),
+        lt(importJobs.createdAt, job.createdAt),
+      ),
+    )
+    .orderBy(desc(importJobs.createdAt))
+    .limit(1);
+
   return {
     id: job.id,
+    /** An earlier finished upload of the same file, if there was one. */
+    duplicateOfJobId: earlier?.id ?? null,
+    rowStats,
     filename: job.filename,
     sheetName: job.sheetName,
     status: job.status,
