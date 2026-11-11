@@ -1,14 +1,13 @@
 import { and, eq, sql } from "drizzle-orm";
 import type { TripFacts } from "@/domain/tripStatus";
 import type { Ctx } from "../auth/context";
-import { carrierOffers, planVersions, tripCargo, tripStops } from "../db/schema";
+import { carrierOffers, planVersions, tripCargo, tripEvents, tripStops } from "../db/schema";
 
 /**
  * What is currently true of a trip, gathered for the status rules.
  *
- * Execution events and financial completeness live in tables that later
- * modules add. Until a module extends this function its facts are false, so
- * the transitions that depend on them stay closed.
+ * Financial completeness lives in tables that a later module adds; until it
+ * extends this function that fact is false, so closing stays closed.
  */
 export async function tripFacts(
   ctx: Ctx,
@@ -20,7 +19,7 @@ export async function tripFacts(
     .where(and(eq(tripCargo.tripId, tripId), eq(tripCargo.orgId, ctx.orgId)));
 
   const stops = await ctx.db
-    .select({ arrive: tripStops.actualArriveAt, skipped: tripStops.skippedReason })
+    .select({ arrive: tripStops.actualArriveAt, depart: tripStops.actualDepartAt, skipped: tripStops.skippedReason })
     .from(tripStops)
     .where(and(eq(tripStops.tripId, tripId), eq(tripStops.orgId, ctx.orgId)));
 
@@ -36,12 +35,19 @@ export async function tripFacts(
     executorReady = offer?.status === "confirmed";
   }
 
+  const [{ events }] = await ctx.db
+    .select({ events: sql<number>`count(*)::int` })
+    .from(tripEvents)
+    .where(and(eq(tripEvents.tripId, tripId), eq(tripEvents.orgId, ctx.orgId)));
+
   return {
     hasCargoStops: cargo > 0,
-    allStopsResolved: stops.length > 0 && stops.every((s) => s.arrive != null || (s.skipped ?? "").trim() !== ""),
+    // A stop is resolved when the truck both arrived and left, or when it is marked as not happening.
+    allStopsResolved:
+      stops.length > 0 && stops.every((s) => (s.arrive != null && s.depart != null) || (s.skipped ?? "").trim() !== ""),
     hasCurrentPlan: !!plan,
     executorReady,
-    hasExecutionEvent: false,
+    hasExecutionEvent: events > 0,
     completenessOk: false,
   };
 }

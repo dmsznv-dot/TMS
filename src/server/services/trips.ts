@@ -378,6 +378,11 @@ export type TripView = {
 
 export async function getTrip(ctx: Ctx, tripId: string): Promise<TripView> {
   requireCan(ctx, "trips.read");
+  return loadTrip(ctx, tripId);
+}
+
+/** Reads a trip of the context's organization. The caller has already checked access. */
+export async function loadTrip(ctx: Ctx, tripId: string): Promise<TripView> {
   const [trip] = await ctx.db.select().from(trips).where(and(eq(trips.id, tripId), eq(trips.orgId, ctx.orgId)));
   if (!trip) throw new DomainError("not_found", "Рейс не найден");
 

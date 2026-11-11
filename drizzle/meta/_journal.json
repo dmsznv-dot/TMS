@@ -50,6 +50,13 @@
       "when": 1794422336717,
       "tag": "0006_lyrical_rafael_vega",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794423272780,
+      "tag": "0007_organic_captain_midlands",
+      "breakpoints": true
     }
   ]
 }

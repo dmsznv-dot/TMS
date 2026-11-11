@@ -146,3 +146,47 @@ export const planVersions = pgTable(
     uniqueIndex("plan_version_current").on(t.tripId).where(sql`${t.isCurrent}`),
   ],
 );
+
+export const shareLinks = pgTable(
+  "share_link",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id").notNull().references(() => organizations.id),
+    tripId: uuid("trip_id").notNull().references(() => trips.id),
+    /** SHA-256 of the token; the token itself is shown once and never stored. */
+    tokenHash: text("token_hash").notNull().unique(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdBy: uuid("created_by").notNull().references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("share_link_trip_idx").on(t.tripId)],
+);
+
+export type TripEventType =
+  | "driver_confirmed"
+  | "loading_started"
+  | "loaded"
+  | "departed"
+  | "arrived"
+  | "unloaded"
+  | "stop_skipped"
+  | "completed"
+  | "fact_entered";
+
+export const tripEvents = pgTable(
+  "trip_event",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id").notNull().references(() => organizations.id),
+    tripId: uuid("trip_id").notNull().references(() => trips.id),
+    stopId: uuid("stop_id").references(() => tripStops.id),
+    type: text("type").$type<TripEventType>().notNull(),
+    at: timestamp("at", { withTimezone: true }).notNull(),
+    source: text("source").$type<"user" | "link">().notNull(),
+    /** User id, or the share link id for events from a driver link. */
+    actorId: text("actor_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("trip_event_trip_idx").on(t.tripId, t.at)],
+);
