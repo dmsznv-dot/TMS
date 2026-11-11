@@ -18,11 +18,14 @@ const envSchema = z.object({
   MAP_TILE_URL: z
     .string()
     .default("https://tile.openstreetmap.org/{z}/{x}/{y}.png"),
+  /** "true" or "false"; defaults to true in production. Set false only for plain-HTTP installs. */
+  SESSION_COOKIE_SECURE: z.enum(["true", "false"]).optional(),
   SEED_PASSWORD: z.string().min(8).default("demo12345"),
 });
 
-export type Env = Omit<z.infer<typeof envSchema>, "SESSION_SECRET"> & {
+export type Env = Omit<z.infer<typeof envSchema>, "SESSION_SECRET" | "SESSION_COOKIE_SECURE"> & {
   SESSION_SECRET: string;
+  SESSION_COOKIE_SECURE: boolean;
 };
 
 const DEV_SECRET = "dev-only-session-secret-not-for-production";
@@ -32,7 +35,13 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
   if (!parsed.SESSION_SECRET && parsed.NODE_ENV === "production") {
     throw new Error("SESSION_SECRET is required in production");
   }
-  return { ...parsed, SESSION_SECRET: parsed.SESSION_SECRET ?? DEV_SECRET };
+  return {
+    ...parsed,
+    SESSION_SECRET: parsed.SESSION_SECRET ?? DEV_SECRET,
+    SESSION_COOKIE_SECURE: parsed.SESSION_COOKIE_SECURE
+      ? parsed.SESSION_COOKIE_SECURE === "true"
+      : parsed.NODE_ENV === "production",
+  };
 }
 
 let cached: Env | undefined;
