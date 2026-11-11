@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { DomainError } from "@/domain/errors";
+import { expectCode } from "../helpers/expectCode";
 import { ctxFromSessionToken, login, logout } from "@/server/auth/session";
 import type { Db } from "@/server/db/client";
 import { auditLog, sessions } from "@/server/db/schema";
@@ -25,14 +25,6 @@ afterAll(async () => {
   await close();
 });
 
-async function expectCode(p: Promise<unknown>, code: string) {
-  const error = await p.then(
-    () => null,
-    (e: unknown) => e,
-  );
-  expect(error).toBeInstanceOf(DomainError);
-  expect((error as DomainError).code).toBe(code);
-}
 
 describe("login", () => {
   it("logs in with the correct password only", async () => {

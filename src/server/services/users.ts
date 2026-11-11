@@ -7,6 +7,7 @@ import { hashPassword } from "../auth/password";
 import type { Db } from "../db/client";
 import { organizations, sessions, users } from "../db/schema";
 import { audit, inTransaction } from "./audit";
+import { isUniqueViolation } from "./dbErrors";
 import { parseInput } from "./validation";
 
 const email = z.string().trim().toLowerCase().pipe(z.email("Некорректный адрес почты"));
@@ -42,11 +43,6 @@ export const orgSettingsPatch = z
 
 export type OrgSettings = typeof organizations.$inferSelect;
 
-function isUniqueViolation(e: unknown): boolean {
-  const code = (e as { code?: string; cause?: { code?: string } })?.code ??
-    (e as { cause?: { code?: string } })?.cause?.code;
-  return code === "23505";
-}
 
 async function insertUser(
   db: Db,
