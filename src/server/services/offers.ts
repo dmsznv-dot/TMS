@@ -111,7 +111,7 @@ export async function setOfferStatus(ctx: Ctx, input: { offerId: string; status:
     if (!offer) throw new DomainError("not_found", "Предложение не найдено");
     needsRate(input.status, offer.rateKop);
     await tx.db.update(carrierOffers).set({ status: input.status }).where(eq(carrierOffers.id, offer.id));
-    await audit(tx, { entity: "carrier_offer", entityId: offer.id, action: "status", before: { status: offer.status }, after: { status: input.status } });
+    await audit(tx, { entity: "carrier_offer", entityId: offer.id, action: "status", before: { status: offer.status }, after: { tripId: offer.tripId, status: input.status } });
   });
 }
 

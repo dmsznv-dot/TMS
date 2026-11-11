@@ -155,6 +155,23 @@ describe("trip economics", () => {
     expect(e.unknownCategories).toEqual([]);
   });
 
+  it("breaks plan and actual down by category and lists planned categories that have no actual yet", async () => {
+    const t = await makeAssignedTrip(db);
+    const finance = await t.org.as("finance");
+    const plannedFuel = await planLine(t, "fuel");
+    await addExpense(finance, { tripId: t.tripId, category: "fuel", amountKop: plannedFuel + 100, date: TODAY });
+    await addExpense(finance, { tripId: t.tripId, category: "downtime", amountKop: rub(500), date: TODAY });
+
+    const e = await getTripEconomics(finance, t.tripId);
+    expect(e.categories).toEqual([
+      { category: "fuel", planKop: plannedFuel, factKop: plannedFuel + 100 },
+      { category: "driver", planKop: await planLine(t, "driver"), factKop: null },
+      { category: "tolls", planKop: 0, factKop: null },
+      { category: "downtime", planKop: 0, factKop: rub(500) },
+    ]);
+    expect(e.missingFact).toEqual(["driver", "tolls"]);
+  });
+
   it("keeps a category unknown until its actual amount is entered", async () => {
     const t = await makeAssignedTrip(db);
     const finance = await t.org.as("finance");

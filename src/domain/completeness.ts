@@ -40,3 +40,13 @@ export function checkCompleteness(i: CompletenessInput): { ok: boolean; failed: 
   if (i.openTasks > 0) failed.push("open_task");
   return { ok: failed.length === 0, failed };
 }
+
+/** Short names for a list of what was missing. */
+export const COMPLETENESS_LABELS_SHORT: Record<CompletenessCode, string> = {
+  acceptance_missing: "приёмка",
+  mileage_missing: "пробег",
+  fact_expense_missing: "факт по плановым статьям",
+  unverified_expense: "непроверенные расходы",
+  unbilled_surcharge: "доплаты без счёта",
+  open_task: "открытые задачи",
+};

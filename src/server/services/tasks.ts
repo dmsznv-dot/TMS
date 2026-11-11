@@ -47,7 +47,7 @@ export async function createTask(ctx: Ctx, input: z.input<typeof taskInput>): Pr
         dueAt: data.dueAt ?? null,
       })
       .returning({ id: tasks.id });
-    await audit(tx, { entity: "task", entityId: row.id, action: "create", after: { type: data.type, title: data.title } });
+    await audit(tx, { entity: "task", entityId: row.id, action: "create", after: { tripId: data.tripId, type: data.type, title: data.title } });
     return { taskId: row.id };
   });
 }
@@ -60,9 +60,9 @@ export async function completeTask(ctx: Ctx, input: { taskId: string; resolution
       .update(tasks)
       .set({ status: "done", resolution, completedAt: new Date() })
       .where(and(eq(tasks.id, input.taskId), eq(tasks.orgId, tx.orgId), eq(tasks.status, "open")))
-      .returning({ id: tasks.id });
+      .returning({ id: tasks.id, tripId: tasks.tripId });
     if (updated.length === 0) throw new DomainError("not_found", "Задача не найдена или уже закрыта");
-    await audit(tx, { entity: "task", entityId: input.taskId, action: "complete", after: { resolution } });
+    await audit(tx, { entity: "task", entityId: input.taskId, action: "complete", after: { tripId: updated[0].tripId, resolution } });
   });
 }
 

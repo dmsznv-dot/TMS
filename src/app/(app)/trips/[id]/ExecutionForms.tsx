@@ -1,7 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import {
   confirmLoadingAction,
   createShareLinkAction,
@@ -11,28 +10,12 @@ import {
   skipStopAction,
 } from "@/app/actions/execution";
 import { Badge, Button, Card, ErrorText, inputClass, inputInlineClass } from "@/components/ui";
+import { useAction } from "@/components/useAction";
 import { formatQty, parseQty } from "@/domain/qty";
 import { formatInTz, zonedToUtc } from "@/domain/time";
 import type { TripView } from "@/server/services/trips";
 
 const LOCAL = "yyyy-MM-dd'T'HH:mm";
-
-/** Runs an action and refreshes the page; shows the message when it fails. */
-function useAction() {
-  const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
-  function run(fn: () => Promise<{ ok: boolean; message?: string }>, after?: () => void) {
-    setError(null);
-    startTransition(async () => {
-      const result = await fn();
-      if (!result.ok) return setError(result.message ?? "Не удалось выполнить действие");
-      after?.();
-      router.refresh();
-    });
-  }
-  return { error, pending, run, setError };
-}
 
 type LinkRow = { id: string; createdAt: Date; expiresAt: Date; revokedAt: Date | null; expired: boolean };
 

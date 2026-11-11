@@ -3,17 +3,24 @@ import { notFound } from "next/navigation";
 import { TripStatusBadge } from "@/components/StatusBadges";
 import { PageHeader } from "@/components/ui";
 import { isDomainError } from "@/domain/errors";
+import { can } from "@/domain/permissions";
 import { requireCtx } from "@/server/auth/requireCtx";
 import { getTrip } from "@/server/services/trips";
 import { AcceptanceTab } from "./AcceptanceTab";
+import { DocumentsTab } from "./DocumentsTab";
 import { ExecutionTab } from "./ExecutionTab";
+import { HistoryTab } from "./HistoryTab";
+import { MoneyTab } from "./MoneyTab";
 import { PlanTab } from "./PlanTab";
 
 /** Tabs of the trip card; later modules add theirs here. */
 const TABS = [
-  { key: "plan", label: "План" },
-  { key: "execution", label: "Исполнение" },
-  { key: "acceptance", label: "Приёмка" },
+  { key: "plan", label: "План", needs: "trips.read" },
+  { key: "execution", label: "Исполнение", needs: "trips.read" },
+  { key: "acceptance", label: "Приёмка", needs: "trips.read" },
+  { key: "money", label: "Деньги", needs: "money.read" },
+  { key: "documents", label: "Документы", needs: "trips.read" },
+  { key: "history", label: "История", needs: "trips.read" },
 ] as const;
 
 export default async function TripPage({
@@ -30,7 +37,9 @@ export default async function TripPage({
     if (isDomainError(e) && (e.code === "not_found" || e.code === "validation")) notFound();
     throw e;
   });
-  const active = TABS.find((t) => t.key === tab)?.key ?? TABS[0].key;
+  // A tab the role may not open is neither shown nor reachable by its address.
+  const tabs = TABS.filter((t) => can(ctx.actor.role, t.needs));
+  const active = tabs.find((t) => t.key === tab)?.key ?? tabs[0].key;
 
   return (
     <>
@@ -45,7 +54,7 @@ export default async function TripPage({
       {trip.cancelReason && <p className="mb-4 text-red-700">Отменён: {trip.cancelReason}</p>}
 
       <div className="mb-4 flex gap-1 border-b border-gray-200">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <Link
             key={t.key}
             href={`/trips/${id}?tab=${t.key}`}
@@ -61,6 +70,9 @@ export default async function TripPage({
       {active === "plan" && <PlanTab ctx={ctx} trip={trip} />}
       {active === "execution" && <ExecutionTab ctx={ctx} trip={trip} />}
       {active === "acceptance" && <AcceptanceTab ctx={ctx} trip={trip} />}
+      {active === "money" && <MoneyTab ctx={ctx} trip={trip} />}
+      {active === "documents" && <DocumentsTab ctx={ctx} trip={trip} />}
+      {active === "history" && <HistoryTab ctx={ctx} trip={trip} />}
     </>
   );
 }

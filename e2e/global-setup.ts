@@ -6,7 +6,7 @@ import { createDb } from "@/server/db/client";
 import { upsertOrder } from "@/server/services/orders";
 import { assignTrip, calculateRoutes, savePlan } from "@/server/services/planning";
 import { addOrderToTrip, createTrip, getTrip } from "@/server/services/trips";
-import { createDriver, createLocation, createVehicle, listLocations } from "@/server/services/refs";
+import { createCounterparty, createDriver, createLocation, createVehicle, listLocations } from "@/server/services/refs";
 import { createOrganization, createUser } from "@/server/services/users";
 
 const E2E_DATABASE_URL =
@@ -64,6 +64,8 @@ export default async function globalSetup(): Promise<void> {
     lengthM: 8.2,
   });
   await createDriver(ctx, { name: "Пётр Петров", phone: "+7 900 111-22-33" });
+  await createCounterparty(ctx, { name: "ООО Ромашка", kind: "customer" });
+  await createCounterparty(ctx, { name: "ИП Перевозов", kind: "carrier" });
 
   const byKey = new Map((await listLocations(ctx)).map((l) => [l.externalKey, l.id]));
   const window = { windowStart: new Date("2026-11-12T02:00:00Z"), windowEnd: new Date("2026-11-12T08:00:00Z") };

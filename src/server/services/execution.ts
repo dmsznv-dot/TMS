@@ -184,7 +184,7 @@ export async function setStopFact(ctx: Ctx, input: z.input<typeof factInput>): P
     });
     if (trip.status === "assigned") await moveTrip(tx, stop.tripId, "in_progress");
     await completeIfResolved(tx, stop.tripId);
-    await audit(tx, { entity: "trip_stop", entityId: stop.id, action: "fact", before: { arrive: stop.actualArriveAt, depart: stop.actualDepartAt }, after: { arrive, depart } });
+    await audit(tx, { entity: "trip_stop", entityId: stop.id, action: "fact", before: { arrive: stop.actualArriveAt, depart: stop.actualDepartAt }, after: { tripId: stop.tripId, arrive, depart } });
   });
 }
 

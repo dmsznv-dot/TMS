@@ -145,7 +145,7 @@ export async function recordAcceptance(
       entityId: cargo.id,
       action: "record",
       before: previous ? { versionNo: previous.versionNo, accepted: previous.acceptedMilli } : undefined,
-      after: { versionNo, accepted: data.acceptedMilli, rejected: data.rejectedMilli, returned: data.returnedMilli, reason: data.reasonCode },
+      after: { tripId: cargo.tripId, versionNo, accepted: data.acceptedMilli, rejected: data.rejectedMilli, returned: data.returnedMilli, reason: data.reasonCode },
     });
     return { versionNo, taskId };
   });

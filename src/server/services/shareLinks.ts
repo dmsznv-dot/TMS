@@ -63,9 +63,9 @@ export async function revokeShareLink(ctx: Ctx, linkId: string): Promise<void> {
       .update(shareLinks)
       .set({ revokedAt: new Date() })
       .where(and(eq(shareLinks.id, linkId), eq(shareLinks.orgId, tx.orgId), isNull(shareLinks.revokedAt)))
-      .returning({ id: shareLinks.id });
+      .returning({ id: shareLinks.id, tripId: shareLinks.tripId });
     if (updated.length === 0) throw new DomainError("not_found", "Ссылка не найдена или уже отозвана");
-    await audit(tx, { entity: "share_link", entityId: linkId, action: "revoke" });
+    await audit(tx, { entity: "share_link", entityId: linkId, action: "revoke", after: { tripId: updated[0].tripId } });
   });
 }
 

@@ -71,6 +71,13 @@
       "when": 1794424389460,
       "tag": "0009_chunky_wolverine",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794424563954,
+      "tag": "0010_unknown_kate_bishop",
+      "breakpoints": true
     }
   ]
 }

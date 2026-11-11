@@ -129,7 +129,7 @@ export async function verifyExpense(ctx: Ctx, expenseId: string): Promise<void> 
     if (!row) throw new DomainError("not_found", "Расход не найден");
     if (row.tripId) await openTrip(tx, row.tripId);
     await tx.db.update(expenses).set({ checkStatus: "verified" }).where(eq(expenses.id, expenseId));
-    await audit(tx, { entity: "expense", entityId: expenseId, action: "verify" });
+    await audit(tx, { entity: "expense", entityId: expenseId, action: "verify", after: { tripId: row.tripId } });
   });
 }
 
@@ -210,7 +210,7 @@ export async function addAccrual(ctx: Ctx, input: z.input<typeof accrualInput>):
       .insert(accruals)
       .values({ orgId: tx.orgId, ...data, vatRateBp: settings.vatRateBp })
       .returning({ id: accruals.id });
-    await audit(tx, { entity: "accrual", entityId: row.id, action: "create", after: { kind: data.kind, amountKop: data.amountKop } });
+    await audit(tx, { entity: "accrual", entityId: row.id, action: "create", after: { tripId: data.tripId, kind: data.kind, amountKop: data.amountKop } });
     return { accrualId: row.id };
   });
 }
@@ -268,7 +268,7 @@ export async function createInvoice(ctx: Ctx, input: z.input<typeof invoiceInput
     if (accrualRows.length > 0) {
       await tx.db.update(accruals).set({ state: "invoiced", invoiceId: row.id }).where(inArray(accruals.id, accrualRows.map((a) => a.id)));
     }
-    await audit(tx, { entity: "invoice", entityId: row.id, action: "create", after: { number: data.number, amountKop: data.amountKop } });
+    await audit(tx, { entity: "invoice", entityId: row.id, action: "create", after: { tripId: data.tripId, number: data.number, amountKop: data.amountKop } });
     return { invoiceId: row.id };
   });
 }
@@ -412,7 +412,7 @@ export async function allocatePayment(ctx: Ctx, input: { paymentId: string; invo
     await tx.db.insert(paymentAllocations).values({ orgId: tx.orgId, paymentId: payment.id, invoiceId: invoice.id, amountKop: input.amountKop, createdBy: actor.userId });
     const total = Number(allocated) + input.amountKop;
     await tx.db.update(payments).set({ state: total >= payment.amountKop ? "allocated" : "partially_allocated" }).where(eq(payments.id, payment.id));
-    await audit(tx, { entity: "payment", entityId: payment.id, action: "allocate", after: { invoiceId: invoice.id, amountKop: input.amountKop } });
+    await audit(tx, { entity: "payment", entityId: payment.id, action: "allocate", after: { tripId: invoice.tripId, invoiceId: invoice.id, amountKop: input.amountKop } });
   });
 }
 
@@ -484,7 +484,7 @@ export async function addDocument(ctx: Ctx, input: z.input<typeof documentInput>
       .insert(documents)
       .values({ orgId: tx.orgId, tripId: data.tripId, kind: data.kind, number: data.number ?? null, operatorRef: data.operatorRef ?? null, status: data.status, log })
       .returning({ id: documents.id });
-    await audit(tx, { entity: "document", entityId: row.id, action: "create", after: { kind: data.kind, status: data.status } });
+    await audit(tx, { entity: "document", entityId: row.id, action: "create", after: { tripId: data.tripId, kind: data.kind, status: data.status } });
     return { documentId: row.id };
   });
 }
@@ -497,7 +497,7 @@ export async function setDocumentStatus(ctx: Ctx, input: { documentId: string; s
     if (!doc) throw new DomainError("not_found", "Документ не найден");
     const log = [...doc.log, { at: new Date().toISOString(), status, by: actor.userId }];
     await tx.db.update(documents).set({ status, log }).where(eq(documents.id, doc.id));
-    await audit(tx, { entity: "document", entityId: doc.id, action: "status", before: { status: doc.status }, after: { status } });
+    await audit(tx, { entity: "document", entityId: doc.id, action: "status", before: { status: doc.status }, after: { tripId: doc.tripId, status } });
   });
 }
 

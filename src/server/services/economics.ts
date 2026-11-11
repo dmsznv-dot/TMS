@@ -32,6 +32,10 @@ export type TripEconomicsView = {
   /** Planned against actual, on the net (VAT-exclusive) base. */
   result: TripResult;
   unknownCategories: ExpenseCategory[];
+  /** Plan and actual per category; null where the figure is unknown or not yet entered. */
+  categories: { category: ExpenseCategory; planKop: number | null; factKop: number | null }[];
+  /** Planned categories with no actual line at all, so the screen can offer "did not occur". */
+  missingFact: ExpenseCategory[];
   /** Each deviation with the actual expenses it is made of, to open the source data. */
   deviation: { category: ExpenseCategory; kop: number; expenseIds: string[] }[];
   fleet: { rule: "days" | "km"; plan: number | null; fact: number | null };
@@ -109,6 +113,20 @@ export async function getTripEconomics(ctx: Ctx, tripId: string): Promise<TripEc
 
   const result = tripResult({ revenueKop, surchargesKop, plan: planLines, fact: factLines, fleetPlanKop: fleetPlan, fleetFactKop: fleetFact });
 
+  const sumOf = (lines: ExpenseLine[], category: ExpenseCategory) => {
+    const own = lines.filter((l) => l.category === category);
+    if (own.length === 0) return undefined;
+    return own.some((l) => l.kop === null) ? null : own.reduce((s, l) => s + (l.kop ?? 0), 0);
+  };
+  const ORDER: ExpenseCategory[] = ["fuel", "driver", "tolls", "carrier", "downtime", "return", "other"];
+  const categories = ORDER.flatMap((category) => {
+    const p = sumOf(planLines, category);
+    const f = sumOf(factLines, category);
+    if (p === undefined && f === undefined) return [];
+    return [{ category, planKop: p === undefined ? 0 : p, factKop: f === undefined ? null : f }];
+  });
+  const missingFact = categories.filter((c) => sumOf(planLines, c.category) !== undefined && sumOf(factLines, c.category) === undefined).map((c) => c.category);
+
   const deviation = result.deviation.map((d) => ({
     ...d,
     expenseIds: expenseViews.filter((e) => e.category === d.category).map((e) => e.id),
@@ -157,6 +175,8 @@ export async function getTripEconomics(ctx: Ctx, tripId: string): Promise<TripEc
     surchargesKop,
     result,
     unknownCategories: result.unknownCategories,
+    categories,
+    missingFact,
     deviation,
     fleet: { rule: settings.fleetRule, plan: fleetPlan, fact: fleetFact },
     delivery: {
