@@ -1,13 +1,15 @@
 import { and, eq, sql } from "drizzle-orm";
 import type { TripFacts } from "@/domain/tripStatus";
 import type { Ctx } from "../auth/context";
+import { checkCompleteness } from "@/domain/completeness";
 import { carrierOffers, planVersions, tripCargo, tripEvents, tripStops } from "../db/schema";
+import { gatherCompleteness } from "./completenessData";
 
 /**
  * What is currently true of a trip, gathered for the status rules.
  *
- * Financial completeness lives in tables that a later module adds; until it
- * extends this function that fact is false, so closing stays closed.
+ * Plan, executor, execution events, stop times and the financial
+ * completeness of the data, each read from its own table.
  */
 export async function tripFacts(
   ctx: Ctx,
@@ -48,6 +50,6 @@ export async function tripFacts(
     hasCurrentPlan: !!plan,
     executorReady,
     hasExecutionEvent: events > 0,
-    completenessOk: false,
+    completenessOk: checkCompleteness(await gatherCompleteness(ctx, tripId)).ok,
   };
 }
