@@ -6,7 +6,7 @@ test.describe.configure({ mode: "serial" });
 test("finance works the money of a trip, sees the debt apart from the result and closes with a reason", async ({ page }) => {
   await loginAs(page, "finance");
   await page.getByRole("link", { name: "Рейсы" }).click();
-  await page.getByRole("link", { name: "Р-0001" }).click();
+  await page.getByRole("link", { name: "Р-0002" }).click();
   await page.getByRole("link", { name: "Деньги" }).click();
 
   // Revenue.
@@ -61,7 +61,7 @@ test("finance works the money of a trip, sees the debt apart from the result and
 
   // Back on the trip: the debt fell, the result did not.
   await page.getByRole("link", { name: "Рейсы" }).click();
-  await page.getByRole("link", { name: "Р-0001" }).click();
+  await page.getByRole("link", { name: "Р-0002" }).click();
   await page.getByRole("link", { name: "Деньги" }).click();
   await expect(page.getByTestId("debt-receivable")).toContainText("32 000,00 ₽");
   await expect(page.getByTestId("fact-margin")).toHaveText(marginBefore);
@@ -84,7 +84,7 @@ test("finance works the money of a trip, sees the debt apart from the result and
 test("documents are entered by hand and keep a log", async ({ page }) => {
   await loginAs(page, "logist");
   await page.getByRole("link", { name: "Рейсы" }).click();
-  await page.getByRole("link", { name: "Р-0001" }).click();
+  await page.getByRole("link", { name: "Р-0002" }).click();
   await page.getByRole("link", { name: "Документы" }).click();
 
   await page.getByLabel("Вид документа").fill("ЭПД");
@@ -103,7 +103,7 @@ test("documents are entered by hand and keep a log", async ({ page }) => {
 test("the warehouse role has no money tab and no payments screen", async ({ page }) => {
   await loginAs(page, "warehouse");
   await page.getByRole("link", { name: "Рейсы" }).click();
-  await page.getByRole("link", { name: "Р-0001" }).click();
+  await page.getByRole("link", { name: "Р-0002" }).click();
   await expect(page.getByRole("link", { name: "Деньги" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "История" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Счета и оплаты" })).toHaveCount(0);
