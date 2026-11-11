@@ -140,6 +140,14 @@ describe("recordAcceptance", () => {
     expect(task.resolution).toContain("новой версией приёмки");
   });
 
+  it("does not keep a reason on a full acceptance", async () => {
+    const t = await makeAssignedTrip(db);
+    await startTrip(t);
+    await recordAcceptance(t.logist, { tripCargoId: cargoOf(t).id, acceptedMilli: 5_000, rejectedMilli: 0, returnedMilli: 0, reasonCode: "shortage" });
+    const [row] = (await listAcceptance(t.logist, t.tripId)).current;
+    expect(row.reasonCode).toBeNull();
+  });
+
   it("replaces the old task with a new one when the shortage changes", async () => {
     const t = await makeAssignedTrip(db);
     await startTrip(t);

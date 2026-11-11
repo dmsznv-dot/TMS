@@ -47,11 +47,13 @@ export async function createShareLink(
 
 export async function listShareLinks(ctx: Ctx, tripId: string) {
   requireCan(ctx, "planning.write");
-  return ctx.db
+  const rows = await ctx.db
     .select({ id: shareLinks.id, createdAt: shareLinks.createdAt, expiresAt: shareLinks.expiresAt, revokedAt: shareLinks.revokedAt })
     .from(shareLinks)
     .where(and(eq(shareLinks.tripId, tripId), eq(shareLinks.orgId, ctx.orgId)))
     .orderBy(desc(shareLinks.createdAt));
+  const now = Date.now();
+  return rows.map((r) => ({ ...r, expired: r.expiresAt.getTime() < now }));
 }
 
 export async function revokeShareLink(ctx: Ctx, linkId: string): Promise<void> {

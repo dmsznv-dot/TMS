@@ -1,7 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { DomainError } from "@/domain/errors";
-import { ROLES } from "@/domain/permissions";
+import { ROLES, type Role } from "@/domain/permissions";
 import { requireCan, type Ctx } from "../auth/context";
 import { hashPassword } from "../auth/password";
 import type { Db } from "../db/client";
@@ -164,4 +164,14 @@ export async function updateOrgSettings(
     await tx.db.update(organizations).set(data).where(eq(organizations.id, tx.orgId));
     await audit(tx, { entity: "organization", entityId: tx.orgId, action: "update", before, after: data });
   });
+}
+
+/** People who can be named as responsible for a task. Names and roles only: no e-mail, no credentials. */
+export async function listAssignableUsers(ctx: Ctx): Promise<{ id: string; name: string; role: Role }[]> {
+  requireCan(ctx, "trips.read");
+  return ctx.db
+    .select({ id: users.id, name: users.name, role: users.role })
+    .from(users)
+    .where(and(eq(users.orgId, ctx.orgId), eq(users.active, true)))
+    .orderBy(asc(users.name));
 }

@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { addToTripAction } from "@/app/actions/planning";
-import { Button, Card, EmptyState, ErrorText, inputClass } from "@/components/ui";
+import { Button, Card, EmptyState, ErrorText, inputInlineClass } from "@/components/ui";
 import { formatQty, parseQty } from "@/domain/qty";
 import { formatInTz } from "@/domain/time";
 import type { OrderView } from "@/server/services/orders";
@@ -72,7 +72,7 @@ function OrderCard({ order, trip, canPlan }: { order: OrderView; trip: TripRef; 
             <input
               aria-label="Количество"
               inputMode="decimal"
-              className={`${inputClass} w-20`}
+              className={`${inputInlineClass} w-20`}
               value={qty[line.id] ?? ""}
               disabled={line.remainingMilli <= 0}
               onChange={(e) => setQty((v) => ({ ...v, [line.id]: e.target.value }))}

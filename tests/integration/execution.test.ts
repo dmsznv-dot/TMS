@@ -5,6 +5,7 @@ import { shareLinks } from "@/server/db/schema";
 import {
   confirmLoading,
   getDriverView,
+  listTripEvents,
   recordEvent,
   setMileage,
   setStopFact,
@@ -224,6 +225,30 @@ describe("events", () => {
     const t = await makeAssignedTrip(db);
     await expectCode(recordEvent(await t.org.as("finance"), { tripId: t.tripId, type: "driver_confirmed" }), "forbidden");
     await recordEvent(await t.org.as("warehouse"), { tripId: t.tripId, type: "driver_confirmed" });
+  });
+});
+
+describe("event feed", () => {
+  it("lists events newest first with the stop, the source and who reported", async () => {
+    const t = await makeAssignedTrip(db);
+    const { ctx } = await linkFor(t);
+    await recordEvent(ctx, { tripId: t.tripId, type: "driver_confirmed" });
+    await recordEvent(await t.org.as("warehouse"), { tripId: t.tripId, type: "loaded", stopId: t.trip.stops[0].id });
+    await recordEvent(ctx, { tripId: t.tripId, type: "arrived", stopId: t.trip.stops[1].id });
+
+    const events = await listTripEvents(t.logist, t.tripId);
+    expect(events.map((e) => [e.type, e.stopName, e.source])).toEqual([
+      ["arrived", "Магазин А", "link"],
+      ["loaded", "Склад", "user"],
+      ["driver_confirmed", null, "link"],
+    ]);
+    expect(events[1].actorName).toBe("warehouse");
+    expect(events[0].actorName).toBe("Водитель по ссылке");
+  });
+
+  it("is isolated between organizations", async () => {
+    const t = await makeAssignedTrip(db);
+    await expectCode(listTripEvents(await (await makeOrg(db)).as("logist"), t.tripId), "not_found");
   });
 });
 

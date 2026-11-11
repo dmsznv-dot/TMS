@@ -5,10 +5,16 @@ import { PageHeader } from "@/components/ui";
 import { isDomainError } from "@/domain/errors";
 import { requireCtx } from "@/server/auth/requireCtx";
 import { getTrip } from "@/server/services/trips";
+import { AcceptanceTab } from "./AcceptanceTab";
+import { ExecutionTab } from "./ExecutionTab";
 import { PlanTab } from "./PlanTab";
 
 /** Tabs of the trip card; later modules add theirs here. */
-const TABS = [{ key: "plan", label: "План" }] as const;
+const TABS = [
+  { key: "plan", label: "План" },
+  { key: "execution", label: "Исполнение" },
+  { key: "acceptance", label: "Приёмка" },
+] as const;
 
 export default async function TripPage({
   params,
@@ -29,7 +35,9 @@ export default async function TripPage({
   return (
     <>
       <PageHeader title={`Рейс ${trip.number}`}>
-        <TripStatusBadge status={trip.status} />
+        <span data-testid="trip-status-badge">
+          <TripStatusBadge status={trip.status} />
+        </span>
         <Link href="/trips" className="text-blue-700 hover:underline">
           К списку
         </Link>
@@ -51,6 +59,8 @@ export default async function TripPage({
       </div>
 
       {active === "plan" && <PlanTab ctx={ctx} trip={trip} />}
+      {active === "execution" && <ExecutionTab ctx={ctx} trip={trip} />}
+      {active === "acceptance" && <AcceptanceTab ctx={ctx} trip={trip} />}
     </>
   );
 }

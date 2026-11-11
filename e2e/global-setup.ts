@@ -4,6 +4,8 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { Pool } from "pg";
 import { createDb } from "@/server/db/client";
 import { upsertOrder } from "@/server/services/orders";
+import { assignTrip, calculateRoutes, savePlan } from "@/server/services/planning";
+import { addOrderToTrip, createTrip, getTrip } from "@/server/services/trips";
 import { createDriver, createLocation, createVehicle, listLocations } from "@/server/services/refs";
 import { createOrganization, createUser } from "@/server/services/users";
 
@@ -78,5 +80,44 @@ export default async function globalSetup(): Promise<void> {
       lines: [{ lineKey: "1", product: "Вода 0,5 л", unit: "палл", qtyMilli, palletsMilli: qtyMilli }],
     });
   }
+
+  // A trip that is already assigned, on another day than the planning scenario uses,
+  // so the execution scenario has something to work on and the truck stays free for the other one.
+  const later = { windowStart: new Date("2026-11-14T02:00:00Z"), windowEnd: new Date("2026-11-14T08:00:00Z") };
+  const lines: { lineId: string }[] = [];
+  for (const [number, key] of [
+    ["П-4001", "SHOP-2"],
+    ["П-4002", "SHOP-3"],
+  ] as const) {
+    const { orderId } = await upsertOrder(ctx, {
+      source: "e2e",
+      number,
+      locationId: byKey.get(key)!,
+      customerName: "ООО Колос",
+      ...later,
+      lines: [{ lineKey: "1", product: "Сок 1 л", unit: "палл", qtyMilli: 5_000, palletsMilli: 5_000 }],
+    });
+    const { getOrder } = await import("@/server/services/orders");
+    lines.push({ lineId: (await getOrder(ctx, orderId)).lines[0].id });
+  }
+  const { tripId } = await createTrip(ctx, { originLocationId: byKey.get("WH-1")! });
+  const { version } = await addOrderToTrip(ctx, { tripId, expectedVersion: 1, items: lines.map((l) => ({ orderLineId: l.lineId, qtyMilli: 5_000 })) });
+  const departureAt = new Date("2026-11-14T03:00:00Z");
+  const vehicle = (await (await import("@/server/services/refs")).listVehicles(ctx))[0];
+  const driver = (await (await import("@/server/services/refs")).listDrivers(ctx))[0];
+  const calc = await calculateRoutes(ctx, { tripId, departureAt, vehicleId: vehicle.id, avoidToll: true });
+  if (!calc.result.ok) throw new Error(`e2e setup: ${calc.result.reason}`);
+  const saved = await savePlan(ctx, {
+    tripId,
+    expectedVersion: version,
+    reason: null,
+    executor: { kind: "own", vehicleId: vehicle.id, driverId: driver.id },
+    departureAt,
+    route: { kind: "sealed", token: calc.result.variants[0].token },
+    toll: { kind: "none" },
+    otherKop: 0,
+  });
+  await assignTrip(ctx, { tripId, expectedVersion: saved.tripVersion });
+  void getTrip;
   await pool.end();
 }

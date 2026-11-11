@@ -8,6 +8,7 @@ import {
   createOrganization,
   createUser,
   getOrgSettings,
+  listAssignableUsers,
   listUsers,
   setUserActive,
   updateOrgSettings,
@@ -160,6 +161,23 @@ describe("users", () => {
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({ orgId: org.orgId, entity: "user", action: "create" });
     expect(JSON.stringify(entries[0].after)).not.toContain("password");
+  });
+});
+
+describe("assignable users", () => {
+  it("lists active people of the organization for any role, without e-mail or hashes", async () => {
+    const a = await makeOrg(db);
+    const b = await makeOrg(db);
+    const logist = await a.as("logist");
+    const gone = await a.as("finance");
+    await setUserActive(await a.as("admin"), { userId: (gone.actor as { userId: string }).userId, active: false });
+    await b.as("logist");
+
+    const people = await listAssignableUsers(await a.as("warehouse"));
+    expect(people.map((p) => p.role).sort()).toEqual(["admin", "logist", "warehouse"]);
+    expect(JSON.stringify(people)).not.toContain("@");
+    expect(JSON.stringify(people)).not.toContain("hash");
+    void logist;
   });
 });
 

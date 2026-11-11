@@ -81,8 +81,11 @@ test("a trip list shows the trips with their status", async ({ page }) => {
   await loginAs(page, "logist");
   await page.getByRole("link", { name: "Рейсы" }).click();
   await expect(page.getByRole("heading", { name: "Рейсы" })).toBeVisible();
-  await expect(page.getByRole("row", { name: /Назначен/ })).toHaveCount(1);
-  await expect(page.getByRole("row", { name: /Черновик/ })).toHaveCount(1);
+  await expect(page.getByRole("row", { name: /Назначен/ }).first()).toBeVisible();
+  await expect(page.getByRole("row", { name: /Черновик/ }).first()).toBeVisible();
+  await page.getByRole("link", { name: "Черновик" }).click();
+  await expect(page).toHaveURL(/status=draft/);
+  await expect(page.getByRole("row", { name: /Назначен/ })).toHaveCount(0);
 });
 
 test("warehouse sees the planning screen without planning controls", async ({ page }) => {

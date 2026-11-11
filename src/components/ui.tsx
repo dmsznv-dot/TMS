@@ -25,6 +25,9 @@ export function Button({
 export const inputClass =
   "block w-full rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100";
 
+/** The same field without stretching to the full width, for inputs that carry their own width. */
+export const inputInlineClass = inputClass.replace("block w-full ", "block ");
+
 export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
   return <div className={`rounded-lg border border-gray-200 bg-white ${className}`}>{children}</div>;
 }

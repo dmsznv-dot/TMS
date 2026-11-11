@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { addOfferAction, setOfferStatusAction } from "@/app/actions/planning";
-import { Badge, Button, Card, ErrorText, inputClass } from "@/components/ui";
+import { Badge, Button, Card, ErrorText, inputClass, inputInlineClass } from "@/components/ui";
 import { formatRub, parseRub } from "@/domain/money";
 import { formatInTz } from "@/domain/time";
 import type { OfferStatus, OfferView } from "@/server/services/offers";
@@ -107,7 +107,7 @@ export function OffersPanel({
           {canEdit && (
             <label className="flex items-center gap-2 text-xs">
               Состояние
-              <select aria-label={`Состояние предложения ${o.carrierName}`} className={`${inputClass} w-auto`} value={o.status} disabled={pending} onChange={(e) => setStatus(o.id, e.target.value as OfferStatus)}>
+              <select aria-label={`Состояние предложения ${o.carrierName}`} className={`${inputInlineClass} w-auto`} value={o.status} disabled={pending} onChange={(e) => setStatus(o.id, e.target.value as OfferStatus)}>
                 {(Object.keys(OFFER_STATUS_LABELS) as OfferStatus[]).map((s) => (
                   <option key={s} value={s}>
                     {OFFER_STATUS_LABELS[s]}

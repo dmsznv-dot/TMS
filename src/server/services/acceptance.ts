@@ -102,7 +102,8 @@ export async function recordAcceptance(
       acceptedMilli: data.acceptedMilli,
       rejectedMilli: data.rejectedMilli,
       returnedMilli: data.returnedMilli,
-      reasonCode: (data.reasonCode ?? null) as ReasonCode | null,
+      // A reason explains a shortfall; on a full acceptance it would only mislead.
+      reasonCode: (shortfall ? (data.reasonCode ?? null) : null) as ReasonCode | null,
       confirmation: data.confirmation ?? null,
       createdBy: actor.userId,
     });

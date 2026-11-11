@@ -1,9 +1,9 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { DomainError } from "@/domain/errors";
 import { yandexMapsRouteUrl, yandexNavigatorUrl } from "@/domain/yandexLinks";
 import { requireCan, type Ctx } from "../auth/context";
-import { planVersions, tripCargo, tripEvents, tripStops, trips, type TripEventType } from "../db/schema";
+import { locations, planVersions, tripCargo, tripEvents, tripStops, trips, users, type TripEventType } from "../db/schema";
 import { audit, inTransaction } from "./audit";
 import { tripFacts } from "./tripFacts";
 import { loadTrip, lockTrip, moveTrip } from "./trips";
@@ -300,3 +300,49 @@ export async function getDriverView(ctx: Ctx): Promise<DriverView> {
     navigatorUrl: yandexNavigatorUrl(points),
   };
 }
+
+export type TripEventView = {
+  id: string;
+  type: TripEventType;
+  at: Date;
+  stopName: string | null;
+  source: "user" | "link";
+  actorName: string;
+};
+
+/** What was reported on the trip, newest first. */
+export async function listTripEvents(ctx: Ctx, tripId: string): Promise<TripEventView[]> {
+  requireCan(ctx, "trips.read");
+  const [trip] = await ctx.db.select({ id: trips.id }).from(trips).where(and(eq(trips.id, tripId), eq(trips.orgId, ctx.orgId)));
+  if (!trip) throw new DomainError("not_found", "Рейс не найден");
+
+  const rows = await ctx.db
+    .select({ event: tripEvents, stopName: locations.name, userName: users.name })
+    .from(tripEvents)
+    .leftJoin(tripStops, eq(tripStops.id, tripEvents.stopId))
+    .leftJoin(locations, eq(locations.id, tripStops.locationId))
+    .leftJoin(users, and(eq(tripEvents.source, "user"), eq(users.id, sql`${tripEvents.actorId}::uuid`)))
+    .where(and(eq(tripEvents.tripId, tripId), eq(tripEvents.orgId, ctx.orgId)))
+    .orderBy(desc(tripEvents.at), desc(tripEvents.createdAt));
+
+  return rows.map(({ event, stopName, userName }) => ({
+    id: event.id,
+    type: event.type,
+    at: event.at,
+    stopName,
+    source: event.source,
+    actorName: event.source === "link" ? "Водитель по ссылке" : (userName ?? "—"),
+  }));
+}
+
+export const EVENT_LABELS: Record<TripEventType, string> = {
+  driver_confirmed: "Водитель подтвердил назначение",
+  loading_started: "Начата погрузка",
+  loaded: "Погружен, выезд",
+  departed: "Выехал",
+  arrived: "Прибыл",
+  unloaded: "Разгружен",
+  stop_skipped: "Остановка не состоялась",
+  completed: "Рейс завершён",
+  fact_entered: "Факт внесён вручную",
+};
