@@ -8,8 +8,10 @@ import { currentUser, requireCtx } from "@/server/auth/requireCtx";
 const NAV: (NavItem & { needs: Action })[] = [
   { href: "/planning", label: "Планирование", needs: "trips.read" },
   { href: "/trips", label: "Рейсы", needs: "trips.read" },
+  { href: "/triage", label: "Разобрать", needs: "trips.read" },
   { href: "/money", label: "Счета и оплаты", needs: "money.read" },
   { href: "/import", label: "Импорт", needs: "planning.write" },
+  { href: "/export", label: "Выгрузки", needs: "export.run" },
   { href: "/refs", label: "Справочники", needs: "refs.read" },
 ];
 

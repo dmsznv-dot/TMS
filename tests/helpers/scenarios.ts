@@ -14,10 +14,11 @@ export type AssignedTrip = {
   trip: TripView;
 };
 
-const DEPART = new Date("2026-11-12T03:00:00Z");
+export const DEPART = new Date("2026-11-12T03:00:00Z");
 
 /** A trip with two delivery stops, planned with an own vehicle and driver, and assigned. */
-export async function makeAssignedTrip(db: Db, org?: TestOrg): Promise<AssignedTrip> {
+export async function makeAssignedTrip(db: Db, org?: TestOrg, opts: { departureAt?: Date } = {}): Promise<AssignedTrip> {
+  const departureAt = opts.departureAt ?? DEPART;
   const o = org ?? (await makeOrg(db));
   const logist = await o.as("logist");
   const warehouse = await makeLocation(logist, "Склад", {
@@ -50,14 +51,14 @@ export async function makeAssignedTrip(db: Db, org?: TestOrg): Promise<AssignedT
     items: [a, b].map((x) => ({ orderLineId: x.lineId, qtyMilli: 5_000 })),
   });
 
-  const calc = await calculateRoutes(logist, { tripId, departureAt: DEPART, vehicleId, avoidToll: false });
+  const calc = await calculateRoutes(logist, { tripId, departureAt, vehicleId, avoidToll: false });
   if (!calc.result.ok) throw new Error(calc.result.reason);
   const saved = await savePlan(logist, {
     tripId,
     expectedVersion: version,
     reason: null,
     executor: { kind: "own", vehicleId, driverId },
-    departureAt: DEPART,
+    departureAt,
     route: { kind: "sealed", token: calc.result.variants[0].token },
     toll: { kind: "none" },
     otherKop: 0,
