@@ -1,9 +1,10 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { DomainError } from "@/domain/errors";
 import { deriveOrderStatus, type OrderStatus } from "@/domain/orderStatus";
+import { OPEN_TRIP_STATUSES } from "@/domain/tripStatus";
 import { allows, requireCan, type Ctx } from "../auth/context";
-import { locations, orderLines, orders } from "../db/schema";
+import { locations, orderLines, orders, tripCargo, trips } from "../db/schema";
 import { audit, inTransaction } from "./audit";
 import { parseInput } from "./validation";
 
@@ -77,11 +78,27 @@ export type OrderView = {
 export type LineProgress = { allocatedOpen: number; delivered: number };
 
 /**
- * Planned and delivered quantities per order line. Allocation to trips and
- * acceptance are added by the trip and acceptance services.
+ * Planned and delivered quantities per order line: quantity on trips that
+ * have not been completed or cancelled, and quantity the recipient accepted.
  */
-export async function lineProgress(_ctx: Ctx, lineIds: string[]): Promise<Map<string, LineProgress>> {
-  return new Map(lineIds.map((id) => [id, { allocatedOpen: 0, delivered: 0 }]));
+export async function lineProgress(ctx: Ctx, lineIds: string[]): Promise<Map<string, LineProgress>> {
+  const progress = new Map<string, LineProgress>(lineIds.map((id) => [id, { allocatedOpen: 0, delivered: 0 }]));
+  if (lineIds.length === 0) return progress;
+
+  const allocated = await ctx.db
+    .select({ lineId: tripCargo.orderLineId, qty: sql<number>`coalesce(sum(${tripCargo.qtyMilli}), 0)::float8` })
+    .from(tripCargo)
+    .innerJoin(trips, eq(trips.id, tripCargo.tripId))
+    .where(
+      and(
+        eq(tripCargo.orgId, ctx.orgId),
+        inArray(tripCargo.orderLineId, lineIds),
+        inArray(trips.status, OPEN_TRIP_STATUSES),
+      ),
+    )
+    .groupBy(tripCargo.orderLineId);
+  for (const row of allocated) progress.get(row.lineId)!.allocatedOpen = Number(row.qty);
+  return progress;
 }
 
 const LINE_FIELDS = [

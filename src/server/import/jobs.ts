@@ -293,51 +293,60 @@ function rowResult(order: UpsertResult, lineResults: Record<string, UpsertResult
   return headerChanged ? "updated" : (lineResults[lineKey] ?? "skipped");
 }
 
+type GroupRow = { id: string; parsed: ParsedOrderRow };
+
+/**
+ * Applies the rows of one order together. If that fails, each row is applied
+ * on its own so only the rows that really conflict are reported as errors.
+ */
+async function applyGroup(ctx: Ctx, templateId: string, number: string, group: GroupRow[]): Promise<void> {
+  const head = group[0].parsed;
+  try {
+    const { result, lineResults } = await upsertOrder(ctx, {
+      source: `template:${templateId}`,
+      number,
+      locationId: head.locationId,
+      customerName: head.customerName,
+      windowStart: head.windowStart,
+      windowEnd: head.windowEnd,
+      lines: group.map(({ parsed }) => ({
+        lineKey: parsed.lineKey,
+        product: parsed.product,
+        unit: parsed.unit,
+        qtyMilli: parsed.qty,
+        weightKgMilli: parsed.weightKgMilli,
+        volumeM3Milli: parsed.volumeM3Milli,
+        palletsMilli: parsed.palletsMilli,
+        priceKop: parsed.priceKop,
+        costKop: parsed.costKop,
+      })),
+    });
+    for (const { id, parsed } of group) {
+      await ctx.db
+        .update(importRows)
+        .set({ status: "applied", errors: [], result: rowResult(result, lineResults, parsed.lineKey) })
+        .where(eq(importRows.id, id));
+    }
+  } catch (e) {
+    if (!isDomainError(e)) throw e;
+    if (group.length > 1) {
+      for (const row of group) await applyGroup(ctx, templateId, number, [row]);
+      return;
+    }
+    const errors: RowError[] = [{ field: "row", code: e.code, message: e.message }];
+    await ctx.db.update(importRows).set({ status: "error", errors, result: null }).where(eq(importRows.id, group[0].id));
+  }
+}
+
 async function applyRows(ctx: Ctx, templateId: string, rows: CheckedRow[]): Promise<void> {
-  const groups = new Map<string, { id: string; parsed: ParsedOrderRow }[]>();
+  const groups = new Map<string, GroupRow[]>();
   for (const row of rows) {
     if (!row.parsed) continue;
     const group = groups.get(row.parsed.number) ?? [];
     group.push({ id: row.id, parsed: row.parsed });
     groups.set(row.parsed.number, group);
   }
-
-  for (const [number, group] of groups) {
-    const head = group[0].parsed;
-    try {
-      const { result, lineResults } = await upsertOrder(ctx, {
-        source: `template:${templateId}`,
-        number,
-        locationId: head.locationId,
-        customerName: head.customerName,
-        windowStart: head.windowStart,
-        windowEnd: head.windowEnd,
-        lines: group.map(({ parsed }) => ({
-          lineKey: parsed.lineKey,
-          product: parsed.product,
-          unit: parsed.unit,
-          qtyMilli: parsed.qty,
-          weightKgMilli: parsed.weightKgMilli,
-          volumeM3Milli: parsed.volumeM3Milli,
-          palletsMilli: parsed.palletsMilli,
-          priceKop: parsed.priceKop,
-          costKop: parsed.costKop,
-        })),
-      });
-      for (const { id, parsed } of group) {
-        await ctx.db
-          .update(importRows)
-          .set({ status: "applied", errors: [], result: rowResult(result, lineResults, parsed.lineKey) })
-          .where(eq(importRows.id, id));
-      }
-    } catch (e) {
-      if (!isDomainError(e)) throw e;
-      const errors: RowError[] = [{ field: "row", code: e.code, message: e.message }];
-      for (const { id } of group) {
-        await ctx.db.update(importRows).set({ status: "error", errors, result: null }).where(eq(importRows.id, id));
-      }
-    }
-  }
+  for (const [number, group] of groups) await applyGroup(ctx, templateId, number, group);
 }
 
 /**

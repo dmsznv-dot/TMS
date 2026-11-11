@@ -13,7 +13,8 @@ import {
   saveTemplate,
   validateImportJob,
 } from "@/server/import/jobs";
-import { listOrders } from "@/server/services/orders";
+import { getOrder, listOrders } from "@/server/services/orders";
+import { addOrderToTrip, createTrip, getTrip } from "@/server/services/trips";
 import { createLocation } from "@/server/services/refs";
 import { expectCode } from "../helpers/expectCode";
 import { makeOrg } from "../helpers/factories";
@@ -206,6 +207,33 @@ describe("import", () => {
     expect(job.counts).toEqual({ added: 1, updated: 0, skipped: 0, errors: 0 });
     const [order] = await listOrders(logist);
     expect(order.windowStart.toISOString()).toBe("2026-11-12T02:00:00.000Z");
+  });
+
+  it("reports a quantity below the planned one as a plan_conflict row error", async () => {
+    const { logist, templateId } = await setup();
+    await importFile(logist, templateId, THREE_ROWS);
+    const [order] = (await listOrders(logist)).filter((o) => o.number === "З-1");
+    const water = order.lines.find((l) => l.lineKey === "Вода")!;
+
+    const { locationId } = { locationId: (await getOrder(logist, order.id)).location.id };
+    const { tripId } = await createTrip(logist, { originLocationId: locationId });
+    await addOrderToTrip(logist, {
+      tripId,
+      expectedVersion: (await getTrip(logist, tripId)).version,
+      items: [{ orderLineId: water.id, qtyMilli: 8_000 }],
+    });
+
+    const edited = csv(
+      "З-1;SHOP-1;12.11.2026 09:00;12.11.2026 14:00;5;Вода",
+      "З-1;SHOP-1;12.11.2026 09:00;12.11.2026 14:00;4;Сок",
+      "З-2;SHOP-1;13.11.2026 09:00;13.11.2026 14:00;7;Вода",
+    );
+    const { job, jobId } = await importFile(logist, templateId, edited);
+
+    expect(job.counts).toEqual({ added: 0, updated: 0, skipped: 2, errors: 1 });
+    const [bad] = await listImportRows(logist, jobId, { status: "error" });
+    expect(bad.errors[0].code).toBe("plan_conflict");
+    expect((await getOrder(logist, order.id)).lines.find((l) => l.lineKey === "Вода")!.qtyMilli).toBe(10_000);
   });
 
   it("is safe to process twice", async () => {
