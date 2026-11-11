@@ -1,10 +1,10 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import { z } from "zod";
 import { DomainError } from "@/domain/errors";
 import { deriveOrderStatus, type OrderStatus } from "@/domain/orderStatus";
 import { OPEN_TRIP_STATUSES } from "@/domain/tripStatus";
 import { allows, requireCan, type Ctx } from "../auth/context";
-import { locations, orderLines, orders, tripCargo, trips } from "../db/schema";
+import { acceptances, locations, orderLines, orders, tripCargo, trips } from "../db/schema";
 import { audit, inTransaction } from "./audit";
 import { parseInput } from "./validation";
 
@@ -78,26 +78,40 @@ export type OrderView = {
 export type LineProgress = { allocatedOpen: number; delivered: number };
 
 /**
- * Planned and delivered quantities per order line: quantity on trips that
- * have not been completed or cancelled, and quantity the recipient accepted.
+ * Planned and delivered quantities per order line.
+ *
+ * On a trip that is still open, cargo counts as planned except what the
+ * recipient already handled (accepted, rejected or returned). On a finished
+ * trip it keeps counting as planned until an acceptance is entered, so goods
+ * that were driven out cannot be sent a second time; once accepted, whatever
+ * was not accepted is free to be planned again. Accepted quantity is delivered.
  */
 export async function lineProgress(ctx: Ctx, lineIds: string[]): Promise<Map<string, LineProgress>> {
   const progress = new Map<string, LineProgress>(lineIds.map((id) => [id, { allocatedOpen: 0, delivered: 0 }]));
   if (lineIds.length === 0) return progress;
 
-  const allocated = await ctx.db
-    .select({ lineId: tripCargo.orderLineId, qty: sql<number>`coalesce(sum(${tripCargo.qtyMilli}), 0)::float8` })
+  const rows = await ctx.db
+    .select({
+      lineId: tripCargo.orderLineId,
+      qty: tripCargo.qtyMilli,
+      status: trips.status,
+      acceptanceId: acceptances.id,
+      accepted: acceptances.acceptedMilli,
+      rejected: acceptances.rejectedMilli,
+      returned: acceptances.returnedMilli,
+    })
     .from(tripCargo)
     .innerJoin(trips, eq(trips.id, tripCargo.tripId))
-    .where(
-      and(
-        eq(tripCargo.orgId, ctx.orgId),
-        inArray(tripCargo.orderLineId, lineIds),
-        inArray(trips.status, OPEN_TRIP_STATUSES),
-      ),
-    )
-    .groupBy(tripCargo.orderLineId);
-  for (const row of allocated) progress.get(row.lineId)!.allocatedOpen = Number(row.qty);
+    .leftJoin(acceptances, and(eq(acceptances.tripCargoId, tripCargo.id), eq(acceptances.isCurrent, true)))
+    .where(and(eq(tripCargo.orgId, ctx.orgId), inArray(tripCargo.orderLineId, lineIds), ne(trips.status, "cancelled")));
+
+  for (const row of rows) {
+    const entry = progress.get(row.lineId)!;
+    const handled = Number(row.accepted ?? 0) + Number(row.rejected ?? 0) + Number(row.returned ?? 0);
+    entry.delivered += Number(row.accepted ?? 0);
+    if (OPEN_TRIP_STATUSES.includes(row.status)) entry.allocatedOpen += Math.max(0, Number(row.qty) - handled);
+    else if (!row.acceptanceId) entry.allocatedOpen += Number(row.qty);
+  }
   return progress;
 }
 

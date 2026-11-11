@@ -3,7 +3,7 @@ import { bigint, boolean, doublePrecision, index, integer, jsonb, pgTable, text,
 import type { CostLine } from "@/domain/costEstimate";
 import type { WindowState } from "@/domain/eta";
 import type { TripStatus } from "@/domain/tripStatus";
-import { orderLines } from "./orders";
+import { orderLines, orders } from "./orders";
 import { organizations, users } from "./org";
 import { counterparties, drivers, locations, vehicles } from "./refs";
 
@@ -189,4 +189,53 @@ export const tripEvents = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("trip_event_trip_idx").on(t.tripId, t.at)],
+);
+
+export type ReasonCode = "shortage" | "damage" | "quality" | "docs_mismatch" | "refused" | "other";
+
+/** What the recipient accepted of one cargo row. A correction is a new version; old ones stay. */
+export const acceptances = pgTable(
+  "acceptance",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id").notNull().references(() => organizations.id),
+    tripCargoId: uuid("trip_cargo_id").notNull().references(() => tripCargo.id),
+    versionNo: integer("version_no").notNull(),
+    isCurrent: boolean("is_current").notNull().default(true),
+    acceptedMilli: bigint("accepted_milli", { mode: "number" }).notNull(),
+    rejectedMilli: bigint("rejected_milli", { mode: "number" }).notNull().default(0),
+    returnedMilli: bigint("returned_milli", { mode: "number" }).notNull().default(0),
+    reasonCode: text("reason_code").$type<ReasonCode>(),
+    /** How the acceptance was confirmed: an act number, a signature, a message. */
+    confirmation: text("confirmation"),
+    createdBy: uuid("created_by").notNull().references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("acceptance_version").on(t.tripCargoId, t.versionNo),
+    uniqueIndex("acceptance_current").on(t.tripCargoId).where(sql`${t.isCurrent}`),
+  ],
+);
+
+export type TaskType = "shortfall" | "rejection" | "return" | "bill_surcharge" | "other";
+
+export const tasks = pgTable(
+  "task",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id").notNull().references(() => organizations.id),
+    type: text("type").$type<TaskType>().notNull(),
+    tripId: uuid("trip_id").references(() => trips.id),
+    orderId: uuid("order_id").references(() => orders.id),
+    /** Set for tasks raised by an acceptance, so a new version can close them. */
+    tripCargoId: uuid("trip_cargo_id").references(() => tripCargo.id),
+    title: text("title").notNull(),
+    responsibleUserId: uuid("responsible_user_id").references(() => users.id),
+    dueAt: timestamp("due_at", { withTimezone: true }),
+    status: text("status").$type<"open" | "done">().notNull().default("open"),
+    resolution: text("resolution"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (t) => [index("task_status_idx").on(t.orgId, t.status), index("task_trip_idx").on(t.tripId)],
 );
