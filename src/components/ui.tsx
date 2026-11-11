@@ -57,7 +57,7 @@ export function Badge({ tone = "gray", children }: { tone?: keyof typeof BADGE_T
 export function ErrorText({ children }: { children: ReactNode }) {
   if (!children) return null;
   return (
-    <p role="alert" data-form-error className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+    <p role="alert" data-form-error data-testid="form-error" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
       {children}
     </p>
   );

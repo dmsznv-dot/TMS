@@ -9,3 +9,16 @@ body {
   background: #f6f7f9;
   color: #111827;
 }
+
+.leaflet-tooltip.route-stop-label {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  font-weight: 700;
+  font-size: 11px;
+  color: #1d4ed8;
+  padding: 0;
+}
+.leaflet-tooltip.route-stop-label::before {
+  display: none;
+}

@@ -3,7 +3,8 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { Pool } from "pg";
 import { createDb } from "@/server/db/client";
-import { createLocation } from "@/server/services/refs";
+import { upsertOrder } from "@/server/services/orders";
+import { createDriver, createLocation, createVehicle, listLocations } from "@/server/services/refs";
 import { createOrganization, createUser } from "@/server/services/users";
 
 const E2E_DATABASE_URL =
@@ -47,5 +48,35 @@ export default async function globalSetup(): Promise<void> {
     { name: "Магазин на Затулинке", externalKey: "SHOP-3", kind: "customer", lat: 54.9472, lon: 82.9033 },
   ] as const;
   for (const point of points) await createLocation(ctx, { ...point, tz });
+
+  await createVehicle(ctx, {
+    plate: "А777АА154",
+    bodyType: "Тент",
+    capacityPallets: 20,
+    fuelNormLPer100Km: 25,
+    maxPermMassT: 12,
+    massT: 9,
+    axleLoadT: 6,
+    heightM: 3.4,
+    widthM: 2.5,
+    lengthM: 8.2,
+  });
+  await createDriver(ctx, { name: "Пётр Петров", phone: "+7 900 111-22-33" });
+
+  const byKey = new Map((await listLocations(ctx)).map((l) => [l.externalKey, l.id]));
+  const window = { windowStart: new Date("2026-11-12T02:00:00Z"), windowEnd: new Date("2026-11-12T08:00:00Z") };
+  for (const [number, key, qtyMilli] of [
+    ["П-2001", "SHOP-1", 10_000],
+    ["П-2002", "SHOP-3", 5_000],
+  ] as const) {
+    await upsertOrder(ctx, {
+      source: "e2e",
+      number,
+      locationId: byKey.get(key)!,
+      customerName: "ООО Ромашка",
+      ...window,
+      lines: [{ lineKey: "1", product: "Вода 0,5 л", unit: "палл", qtyMilli, palletsMilli: qtyMilli }],
+    });
+  }
   await pool.end();
 }
