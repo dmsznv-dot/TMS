@@ -43,6 +43,13 @@
       "when": 1794421937245,
       "tag": "0005_eminent_captain_midlands",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794422336717,
+      "tag": "0006_lyrical_rafael_vega",
+      "breakpoints": true
     }
   ]
 }

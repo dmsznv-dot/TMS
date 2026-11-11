@@ -28,8 +28,16 @@ const TRANSITION_MESSAGES: Record<string, string> = {
 
 // --- locking -----------------------------------------------------------------
 
-/** Loads the trip with a row lock and checks the caller's version. */
-async function lockTrip(ctx: Ctx, tripId: string, expectedVersion: number | undefined, editable = true): Promise<TripRow> {
+/**
+ * Loads the trip with a row lock and checks the caller's version. `allowed`
+ * lists the statuses the operation is valid in; null accepts any.
+ */
+export async function lockTrip(
+  ctx: Ctx,
+  tripId: string,
+  expectedVersion: number | undefined,
+  allowed: TripStatus[] | null = EDITABLE,
+): Promise<TripRow> {
   const [trip] = await ctx.db
     .select()
     .from(trips)
@@ -39,13 +47,13 @@ async function lockTrip(ctx: Ctx, tripId: string, expectedVersion: number | unde
   if (expectedVersion !== undefined && trip.version !== expectedVersion) {
     throw new DomainError("stale", "Рейс уже изменили. Обновите страницу и повторите действие.");
   }
-  if (editable && !EDITABLE.includes(trip.status)) {
+  if (allowed && !allowed.includes(trip.status)) {
     throw new DomainError("trip_locked", "Рейс нельзя менять в этом статусе");
   }
   return trip;
 }
 
-async function bumpVersion(ctx: Ctx, tripId: string): Promise<number> {
+export async function bumpVersion(ctx: Ctx, tripId: string): Promise<number> {
   const [row] = await ctx.db
     .update(trips)
     .set({ version: sql`${trips.version} + 1` })
@@ -267,7 +275,7 @@ export type MoveOptions = { expectedVersion?: number; cancelReason?: string | nu
  * that come from a driver link can use it too.
  */
 export async function moveTrip(ctx: Ctx, tripId: string, to: TripStatus, options: MoveOptions = {}): Promise<{ version: number }> {
-  const trip = await lockTrip(ctx, tripId, options.expectedVersion, false);
+  const trip = await lockTrip(ctx, tripId, options.expectedVersion, null);
   const facts = await tripFacts(ctx, tripId);
   const check = checkTransition(trip.status, to, {
     ...facts,

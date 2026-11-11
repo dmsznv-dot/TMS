@@ -58,7 +58,16 @@ export async function makeLocation(
 /** An order with a single line; returns the ids needed to put it on a trip. */
 export async function makeOrderLine(
   ctx: Ctx,
-  opts: { locationId: string; number: string; qtyMilli?: number; source?: string; windowStart?: Date; windowEnd?: Date },
+  opts: {
+    locationId: string;
+    number: string;
+    qtyMilli?: number;
+    source?: string;
+    windowStart?: Date;
+    windowEnd?: Date;
+    palletsMilli?: number;
+    weightKgMilli?: number;
+  },
 ): Promise<{ orderId: string; lineId: string }> {
   const { orderId } = await upsertOrder(ctx, {
     source: opts.source ?? "manual",
@@ -66,7 +75,16 @@ export async function makeOrderLine(
     locationId: opts.locationId,
     windowStart: opts.windowStart ?? new Date("2026-11-12T02:00:00Z"),
     windowEnd: opts.windowEnd ?? new Date("2026-11-12T07:00:00Z"),
-    lines: [{ lineKey: "1", product: "Вода", unit: "палл", qtyMilli: opts.qtyMilli ?? 10_000 }],
+    lines: [
+      {
+        lineKey: "1",
+        product: "Вода",
+        unit: "палл",
+        qtyMilli: opts.qtyMilli ?? 10_000,
+        palletsMilli: opts.palletsMilli,
+        weightKgMilli: opts.weightKgMilli,
+      },
+    ],
   });
   const order = await getOrder(ctx, orderId);
   return { orderId, lineId: order.lines[0].id };
