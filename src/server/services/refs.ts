@@ -2,7 +2,7 @@ import { and, asc, eq, type SQL } from "drizzle-orm";
 import type { PgColumn, PgTable } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import { DomainError } from "@/domain/errors";
-import type { TruckProfile } from "@/domain/truck";
+import { isTruckProfileComplete, type TruckProfile } from "@/domain/truck";
 import { requireCan, type Ctx } from "../auth/context";
 import { counterparties, drivers, locations, vehicles } from "../db/schema";
 import { audit, inTransaction } from "./audit";
@@ -277,7 +277,5 @@ export function truckProfileOf(v: VehicleRow): { profile: TruckProfile; complete
   if (v.widthM != null) profile.widthM = v.widthM;
   if (v.lengthM != null) profile.lengthM = v.lengthM;
   if (v.passIds.length > 0) profile.passIds = v.passIds;
-  const complete =
-    v.maxPermMassT != null && v.heightM != null && v.widthM != null && v.lengthM != null;
-  return { profile, complete };
+  return { profile, complete: isTruckProfileComplete(profile) };
 }

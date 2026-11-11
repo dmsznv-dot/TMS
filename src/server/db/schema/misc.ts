@@ -1,5 +1,5 @@
-import { index, jsonb, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
-import { organizations } from "./org";
+import { boolean, index, jsonb, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { organizations, users } from "./org";
 
 export const auditLog = pgTable(
   "audit_log",
@@ -30,4 +30,19 @@ export const externalRefs = pgTable(
     externalId: text("external_id").notNull(),
   },
   (t) => [unique("external_ref_key").on(t.orgId, t.source, t.entityType, t.externalId)],
+);
+
+/** One request to a routing provider. The answer itself is never stored. */
+export const routingRequestLog = pgTable(
+  "routing_request_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id").notNull().references(() => organizations.id),
+    userId: uuid("user_id").references(() => users.id),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+    provider: text("provider").$type<"2gis" | "synthetic">().notNull(),
+    ok: boolean("ok").notNull(),
+    reason: text("reason"),
+  },
+  (t) => [index("routing_request_log_provider_idx").on(t.provider, t.ok)],
 );
