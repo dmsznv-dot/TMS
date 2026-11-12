@@ -6,6 +6,7 @@ import { resetEnvCache } from "@/server/env";
 import { exportDataset } from "@/server/export";
 import { sealVariant } from "@/server/routing/variantToken";
 import { recordAcceptance } from "@/server/services/acceptance";
+import { closeTrip } from "@/server/services/close";
 import { recordEvent } from "@/server/services/execution";
 import { addAccrual, addExpense, createInvoice, recordPayment } from "@/server/services/finance";
 import { savePlan } from "@/server/services/planning";
@@ -121,6 +122,23 @@ describe("trips", () => {
       "Источник расчёта": "демо-расчёт, не 2ГИС",
     });
     expect(Number(rows[0]["Расстояние по плану, км"])).toBeGreaterThan(0);
+  });
+
+  it("gives the creation and closing time of a trip, so a pilot can measure how long a trip takes", async () => {
+    const t = await makeAssignedTrip(db);
+    const before = (await readXlsx((await exportDataset(t.logist, "trips", "xlsx")).body)).rows[0];
+    expect(before["Создан (UTC)"]).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(before["Закрыт (UTC)"]).toBe("");
+
+    for (const stop of (await getTrip(t.logist, t.tripId)).stops) {
+      await recordEvent(t.logist, { tripId: t.tripId, type: stop.operation === "load" ? "loaded" : "unloaded", stopId: stop.id });
+    }
+    const finance = await t.org.as("finance");
+    await closeTrip(finance, { tripId: t.tripId, expectedVersion: (await getTrip(t.logist, t.tripId)).version, overrideReason: "Проверка выгрузки" });
+
+    const after = (await readXlsx((await exportDataset(t.logist, "trips", "xlsx")).body)).rows[0];
+    expect(after["Статус"]).toBe("Финансово закрыт");
+    expect(after["Закрыт (UTC)"]).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
   async function planWithProviderMetrics() {

@@ -97,6 +97,29 @@ tests/         интеграционные тесты      e2e/   сценар�
 
 Сервисы получают контекст организации из сессии или ссылки водителя и никогда не берут организацию из запроса клиента.
 
+## Соответствие критериям первой версии
+
+Критерии — раздел 15 спецификации. Тест можно найти по названию в указанном файле.
+
+| Критерий | Чем проверен |
+|---|---|
+| Заказ делится на два рейса | `tests/integration/trips.test.ts`: «splits one order line across two trips», «rejects allocation above the remainder», «prevents concurrent over-allocation of one line» |
+| Рейс закрывает несколько заказов | `trips.test.ts`: «puts several orders into one trip with a stop per point» |
+| Частичная приёмка сохраняет остаток и причину | `tests/integration/acceptance.test.ts`: «requires a reason for a shortage and creates a task…», «keeps the order quantity and keeps the shortage plannable after the trip completes», «creates a new version, keeps the previous one and closes the old task» |
+| Ответ 2ГИС: точки, варианты, время, расстояние | `src/server/routing/twogis.test.ts`: «returns every variant with distance, duration and geometry…», «asks for a detailed truck route through typed stops» (ответы синтетические, по документации) |
+| Лимит, таймаут и отказ 2ГИС видны | `twogis.test.ts`: «returns timeout when the answer takes longer than allowed», «maps a rejected key»; `tests/integration/planning.test.ts`: «does not call the provider once the live limit is reached», «returns the provider failure and still reports the quota» |
+| Ручная оценка отличима от расчёта | `tests/integration/planning.test.ts`: «stores manual metrics with source manual», «refuses to store 2GIS metrics when storage is switched off» |
+| Перепланирование сохраняет старый план | `planning.test.ts`: «requires a reason from version 2 and keeps version 1 unchanged»; браузер: `e2e/03-planning.spec.ts` |
+| По отклонению открываются исходные данные | `tests/integration/finance.test.ts` (блок «trip economics»); браузер: `e2e/05-money.spec.ts` |
+| Частичная оплата меняет долг и не меняет результат рейса | `finance.test.ts`: «a partial payment changes the debt and leaves the trip result alone»; браузер: `e2e/05-money.spec.ts`, `e2e/07-full-scenario.spec.ts` |
+| Повторный файл без дублей | `tests/integration/importJobs.test.ts`: «does not duplicate on a second upload of the same file»; браузер: `e2e/02-import.spec.ts` |
+| Ошибочная строка исправляется отдельно | `importJobs.test.ts`: «keeps error rows and applies the rest», «fixes a single error row» |
+| Неоднозначный платёж не закрывает счёт | `finance.test.ts`: «a payment that fits two invoices needs review and closes nothing», «a payment that names one invoice waits for allocation and leaves the invoice unpaid» |
+| Организации изолированы | `tests/integration/isolation.test.ts`: проверка каждой экспортируемой функции сервисов; новая функция без проверки роняет тест |
+| Ссылка водителя ограничена рейсом | `tests/integration/execution.test.ts`: «resolves a valid token to a driver context for that trip only», «rejects a revoked link»; браузер: `e2e/04-execution.spec.ts` |
+| Весь путь от файла до выгрузки | `e2e/07-full-scenario.spec.ts` |
+| Метрики пилота | Этап 0; в этапе 1 время создания и закрытия рейсов — в выгрузке «Рейсы» (`export.test.ts`: «gives the creation and closing time of a trip…») |
+
 ## Что открыто
 
 Это вопросы раздела 17 спецификации. Кодом они не решаются.

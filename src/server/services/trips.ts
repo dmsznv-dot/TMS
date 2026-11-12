@@ -57,8 +57,9 @@ export async function bumpVersion(ctx: Ctx, tripId: string): Promise<number> {
   const [row] = await ctx.db
     .update(trips)
     .set({ version: sql`${trips.version} + 1` })
-    .where(eq(trips.id, tripId))
+    .where(and(eq(trips.id, tripId), eq(trips.orgId, ctx.orgId)))
     .returning({ version: trips.version });
+  if (!row) throw new DomainError("not_found", "Рейс не найден");
   return row.version;
 }
 
