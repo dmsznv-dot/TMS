@@ -1,0 +1,134 @@
+# Поставки и экономика рейсов
+
+Веб-сервис для региональных производителей и дистрибьюторов, которые возят часть поставок своим парком, а часть отдают подрядчикам. В одном рабочем пространстве команда принимает заказ, собирает рейс, выбирает исполнителя, следит за исполнением и приёмкой и сверяет деньги.
+
+Это прототип этапа 1 из `TMS_Pilot_PRD.md`. Спецификация — `docs/superpowers/specs/2026-11-11-tms-prototype-design.md`, план реализации — `docs/superpowers/plans/2026-11-11-tms-prototype.md`.
+
+## Что умеет
+
+- **Заказы.** Загрузка XLSX и CSV с сопоставлением колонок, проверкой до записи, отчётом по ошибочным строкам и повторной загрузкой без дублей.
+- **Рейсы.** Один заказ делится между рейсами, один рейс закрывает несколько заказов. Версии плана с причиной перепланирования.
+- **Маршрут и исполнитель.** Грузовые варианты маршрута, время прибытия против окон доставки, сравнение своих машин и подрядчиков по затратам.
+- **Исполнение.** Ссылка для водителя на один рейс (без денег), отметки, ручной факт, приёмка по версиям, задачи по недопоставкам.
+- **Деньги.** План и факт с отклонением по статьям, расходы парка, распределение доставки по заказам, счета и оплаты (оплату разносит человек), долг отдельно от результата, финансовое закрытие рейса.
+- **Разобрать, выгрузки, журнал.** Очередь того, что ждёт человека; выгрузки в XLSX и CSV; история изменений по каждому рейсу.
+
+Роли: администратор, логист, склад, финансы, руководитель. Данные организаций изолированы.
+
+## Запуск без Docker
+
+Нужны Node.js 22 и PostgreSQL 16.
+
+```bash
+npm install
+cp .env.example .env        # задайте DATABASE_URL и SESSION_SECRET
+npm run db:migrate
+npm run seed                # демо-организация, по желанию
+npm run dev
+```
+
+Откройте http://localhost:3000. Демо-пользователи: `admin@demo.local`, `logist@demo.local`, `warehouse@demo.local`, `finance@demo.local`, `manager@demo.local`; пароль — `SEED_PASSWORD` (по умолчанию `demo12345`).
+
+Пример файла заказов — `samples/orders-demo.xlsx` (и `samples/orders-demo.csv`). Одна строка в нём ошибочная нарочно: так видно, как сервис сообщает об ошибках. Шаблон «Демо» уже создан сидом.
+
+## Запуск через Docker Compose
+
+```bash
+SESSION_SECRET=$(openssl rand -hex 32) SEED_DEMO=true docker compose up --build
+```
+
+Приложение на http://localhost:3000. Миграции применяются при старте (`RUN_MIGRATIONS=true`), `SEED_DEMO=true` создаёт демо-организацию, если её ещё нет. База хранится в томе `tms-data`.
+
+За HTTPS задайте `SESSION_COOKIE_SECURE=true`. По умолчанию в compose он `false`, чтобы можно было войти по обычному HTTP при локальной пробе.
+
+> Образ собирается по `Dockerfile`, но в среде разработки этого прототипа Docker-демона не было, поэтому сборку образа и `docker compose up` там не запускали. Проверены: сборка приложения (`npm run build`), его запуск из каталога `standalone` с автоматическими миграциями и демо-данными на пустой базе, и разбор `docker-compose.yml` командой `docker compose config`.
+
+Данные пользователей содержат персональные данные, поэтому для российских клиентов размещайте базу на серверах в РФ.
+
+## Настройки (переменные окружения)
+
+| Переменная | По умолчанию | Назначение |
+|---|---|---|
+| `DATABASE_URL` | — | Строка подключения к PostgreSQL |
+| `SESSION_SECRET` | в разработке — встроенное значение | Подпись токенов вариантов маршрута; обязательна в продакшене, не короче 16 знаков |
+| `SESSION_COOKIE_SECURE` | `true` в продакшене | Флаг `Secure` у cookie сессии |
+| `ROUTING_MODE` | `synthetic` | `synthetic` — встроенный демо-расчёт; `live` — запросы в 2ГИС |
+| `TWOGIS_API_KEY` | — | Ключ 2ГИС; нужен для `live`, хранится только на сервере |
+| `TWOGIS_KEY_EXPIRES_AT` | — | Дата окончания ключа, например `2026-12-20`; показывается рядом со счётчиком |
+| `TWOGIS_REQUEST_LIMIT` | `1000` | Лимит запросов ключа; демо-ключ — 1 000 на Routing API |
+| `ROUTE_METRICS_STORAGE` | `plan` | `none` — расстояние и время из 2ГИС в план не сохраняются, только введённые вручную |
+| `EXPORT_PROVIDER_METRICS` | `false` | `true` — выгрузки содержат расстояние и время, полученные от 2ГИС |
+| `MAP_TILE_URL` | тайлы OpenStreetMap | Источник тайлов карты |
+| `SEED_PASSWORD` | `demo12345` | Пароль демо-пользователей |
+| `RUN_MIGRATIONS` | — | `true` — применять миграции при старте |
+| `SEED_DEMO` | — | `true` — создать демо-организацию при старте |
+
+## Включение расчёта 2ГИС
+
+По умолчанию маршруты считает встроенный демо-расчёт: расстояние по прямой с поправкой на изгибы и средняя скорость, он помечен на экране «Демо-расчёт, не 2ГИС».
+
+Чтобы считать через 2ГИС:
+
+1. Создайте демо-ключ в личном кабинете 2ГИС. Он действует один месяц, на Routing API у него 1 000 запросов и расстояние между точками не больше 50 км. Демо-точки сида подобраны так, чтобы укладываться в это ограничение.
+2. Задайте `ROUTING_MODE=live`, `TWOGIS_API_KEY`, `TWOGIS_KEY_EXPIRES_AT`.
+3. Перед запросом сервис предупредит о соседних точках дальше 50 км и спросит подтверждение; на экране виден счётчик «использовано N из 1000».
+4. Один запрос на сценарий проверки по списку из спецификации (раздел 14) делает владелец продукта вручную.
+
+## Проверки
+
+```bash
+bash scripts/dev-db.sh          # локальный PostgreSQL и базы tms_dev, tms_test, tms_e2e
+npm test                        # модульные тесты расчётов
+npm run test:int                # интеграционные тесты на PostgreSQL
+npm run e2e                     # сценарии в браузере (Playwright)
+npm run lint && npm run typecheck && npm run build
+```
+
+Тесты не обращаются к 2ГИС: ответы адаптера проверяются на синтетических данных, написанных по документации.
+
+## Устройство
+
+```
+src/domain/    расчёты без ввода-вывода: деньги, окна и ETA, затраты, статусы, сверка, полнота
+src/server/    база данных, вход и роли, маршрутизация, импорт, выгрузки, сервисы сценариев
+src/app/       страницы и действия Next.js; /d/<токен> — страница водителя
+tests/         интеграционные тесты      e2e/   сценарии в браузере
+```
+
+Сервисы получают контекст организации из сессии или ссылки водителя и никогда не берут организацию из запроса клиента.
+
+## Соответствие критериям первой версии
+
+Критерии — раздел 15 спецификации. Тест можно найти по названию в указанном файле.
+
+| Критерий | Чем проверен |
+|---|---|
+| Заказ делится на два рейса | `tests/integration/trips.test.ts`: «splits one order line across two trips», «rejects allocation above the remainder», «prevents concurrent over-allocation of one line» |
+| Рейс закрывает несколько заказов | `trips.test.ts`: «puts several orders into one trip with a stop per point» |
+| Частичная приёмка сохраняет остаток и причину | `tests/integration/acceptance.test.ts`: «requires a reason for a shortage and creates a task…», «keeps the order quantity and keeps the shortage plannable after the trip completes», «creates a new version, keeps the previous one and closes the old task» |
+| Ответ 2ГИС: точки, варианты, время, расстояние | `src/server/routing/twogis.test.ts`: «returns every variant with distance, duration and geometry…», «asks for a detailed truck route through typed stops» (ответы синтетические, по документации) |
+| Лимит, таймаут и отказ 2ГИС видны | `twogis.test.ts`: «returns timeout when the answer takes longer than allowed», «maps a rejected key»; `tests/integration/planning.test.ts`: «does not call the provider once the live limit is reached», «returns the provider failure and still reports the quota» |
+| Ручная оценка отличима от расчёта | `tests/integration/planning.test.ts`: «stores manual metrics with source manual», «refuses to store 2GIS metrics when storage is switched off» |
+| Перепланирование сохраняет старый план | `planning.test.ts`: «requires a reason from version 2 and keeps version 1 unchanged»; браузер: `e2e/03-planning.spec.ts` |
+| По отклонению открываются исходные данные | `tests/integration/finance.test.ts` (блок «trip economics»); браузер: `e2e/05-money.spec.ts` |
+| Частичная оплата меняет долг и не меняет результат рейса | `finance.test.ts`: «a partial payment changes the debt and leaves the trip result alone»; браузер: `e2e/05-money.spec.ts`, `e2e/07-full-scenario.spec.ts` |
+| Повторный файл без дублей | `tests/integration/importJobs.test.ts`: «does not duplicate on a second upload of the same file»; браузер: `e2e/02-import.spec.ts` |
+| Ошибочная строка исправляется отдельно | `importJobs.test.ts`: «keeps error rows and applies the rest», «fixes a single error row» |
+| Неоднозначный платёж не закрывает счёт | `finance.test.ts`: «a payment that fits two invoices needs review and closes nothing», «a payment that names one invoice waits for allocation and leaves the invoice unpaid» |
+| Организации изолированы | `tests/integration/isolation.test.ts`: проверка каждой экспортируемой функции сервисов; новая функция без проверки роняет тест |
+| Ссылка водителя ограничена рейсом | `tests/integration/execution.test.ts`: «resolves a valid token to a driver context for that trip only», «rejects a revoked link»; браузер: `e2e/04-execution.spec.ts` |
+| Весь путь от файла до выгрузки | `e2e/07-full-scenario.spec.ts` |
+| Метрики пилота | Этап 0; в этапе 1 время создания и закрытия рейсов — в выгрузке «Рейсы» (`export.test.ts`: «gives the creation and closing time of a trip…») |
+
+## Что открыто
+
+Это вопросы раздела 17 спецификации. Кодом они не решаются.
+
+1. **Хранение показателей 2ГИС.** Оферта 2ГИС (п. 3.1) запрещает сохранять полученные «Продукты» и их кэшировать, за нарушение — неустойка. Сервис не хранит ответы и геометрию, но сохраняет в плане расстояние и время. Входят ли они в «информацию из Продуктов», нужно уточнить у 2ГИС до платного запуска; пока вопрос открыт, храните только введённое вручную (`ROUTE_METRICS_STORAGE=none`).
+2. **Условия демо-ключа** читаются в личном кабинете при его создании.
+3. **Источник тайлов карты** для коммерческой эксплуатации: тайлы OpenStreetMap подходят для проб, не для рабочей нагрузки.
+4. **Ссылки Яндекса.** Формат ссылки Навигатора (`lat_from/lon_from`, `lat_to/lon_to`, `lat_via_N/lon_via_N`) подтверждён по описанию официальной страницы Яндекса, формат ссылки Карт — только по статьям; число промежуточных точек Навигатора не проверено. Откройте ссылку на телефоне и убедитесь, что все остановки на месте.
+5. **Время до промежуточных остановок.** Документированный ответ 2ГИС не даёт его, поэтому общее время делится по участкам пропорционально расстоянию по прямой, а ETA помечено как оценка.
+6. **Лимит 50 км на демо-ключе:** между соседними точками или любыми двумя — проверяется живым ключом.
+
+Не входит в этап 1 (по PRD — следующие этапы): 1С, ATI.SU и другие биржи, GPS, банк, EDI, оператор ЭПД, уведомления, автоматическое распределение заказов, запрос ставки по ссылке.

@@ -1,0 +1,241 @@
+import { sql } from "drizzle-orm";
+import { bigint, boolean, doublePrecision, index, integer, jsonb, pgTable, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import type { CostLine } from "@/domain/costEstimate";
+import type { WindowState } from "@/domain/eta";
+import type { TripStatus } from "@/domain/tripStatus";
+import { orderLines, orders } from "./orders";
+import { organizations, users } from "./org";
+import { counterparties, drivers, locations, vehicles } from "./refs";
+
+export const trips = pgTable(
+  "trip",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id").notNull().references(() => organizations.id),
+    number: text("number").notNull(),
+    status: text("status").$type<TripStatus>().notNull().default("draft"),
+    /** Bumped on every change; writers pass the version they read. */
+    version: integer("version").notNull().default(1),
+    cancelReason: text("cancel_reason"),
+    /** The plan the executor was first assigned on; plan-vs-fact compares against it. */
+    baselinePlanVersionId: uuid("baseline_plan_version_id"),
+    mileageKm: doublePrecision("mileage_km"),
+    mileageUnknown: boolean("mileage_unknown").notNull().default(false),
+    closeOverrideReason: text("close_override_reason"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+  },
+  (t) => [unique("trip_number_key").on(t.orgId, t.number), index("trip_status_idx").on(t.orgId, t.status)],
+);
+
+export const tripStops = pgTable(
+  "trip_stop",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id").notNull().references(() => organizations.id),
+    tripId: uuid("trip_id").notNull().references(() => trips.id),
+    seq: integer("seq").notNull(),
+    locationId: uuid("location_id").notNull().references(() => locations.id),
+    operation: text("operation").$type<"load" | "unload" | "return">().notNull(),
+    actualArriveAt: timestamp("actual_arrive_at", { withTimezone: true }),
+    actualDepartAt: timestamp("actual_depart_at", { withTimezone: true }),
+    /** Set when the stop did not take place; must say why. */
+    skippedReason: text("skipped_reason"),
+  },
+  (t) => [index("trip_stop_trip_idx").on(t.tripId, t.seq)],
+);
+
+export const tripCargo = pgTable(
+  "trip_cargo",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id").notNull().references(() => organizations.id),
+    tripId: uuid("trip_id").notNull().references(() => trips.id),
+    /** The unloading stop this cargo is destined for. */
+    stopId: uuid("stop_id").notNull().references(() => tripStops.id),
+    orderLineId: uuid("order_line_id").notNull().references(() => orderLines.id),
+    qtyMilli: bigint("qty_milli", { mode: "number" }).notNull(),
+    /** Quantity confirmed at loading; null until then. */
+    loadedMilli: bigint("loaded_milli", { mode: "number" }),
+  },
+  (t) => [
+    unique("trip_cargo_line_stop").on(t.stopId, t.orderLineId),
+    index("trip_cargo_line_idx").on(t.orderLineId),
+    index("trip_cargo_trip_idx").on(t.tripId),
+  ],
+);
+
+export type PlanStopSnapshot = {
+  stopId: string;
+  seq: number;
+  operation: "load" | "unload" | "return";
+  locationId: string;
+  locationName: string;
+  address: string | null;
+  lat: number;
+  lon: number;
+  tz: string;
+  /** ISO times; null where they do not apply (the loading stop is only departed from). */
+  arriveAt: string | null;
+  departAt: string;
+  waitMin: number;
+  windowState: WindowState;
+  lateMin: number;
+  windowStart: string | null;
+  windowEnd: string | null;
+  /** Drive time to this stop in seconds. */
+  legDurationS: number | null;
+};
+
+export const carrierOffers = pgTable(
+  "carrier_offer",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id").notNull().references(() => organizations.id),
+    tripId: uuid("trip_id").notNull().references(() => trips.id),
+    carrierId: uuid("carrier_id").notNull().references(() => counterparties.id),
+    /** Null while the carrier is only a candidate and has not quoted a rate. */
+    rateKop: bigint("rate_kop", { mode: "number" }),
+    vatIncluded: boolean("vat_included").notNull().default(true),
+    vatRateBp: integer("vat_rate_bp").notNull(),
+    vehicleDescr: text("vehicle_descr"),
+    confirmedArriveAt: timestamp("confirmed_arrive_at", { withTimezone: true }),
+    downtimeTerms: text("downtime_terms"),
+    expectedDowntimeKop: bigint("expected_downtime_kop", { mode: "number" }).notNull().default(0),
+    validUntil: timestamp("valid_until", { withTimezone: true }),
+    source: text("source"),
+    status: text("status").$type<"candidate" | "quoted" | "confirmed" | "rejected">().notNull().default("quoted"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("carrier_offer_trip_idx").on(t.tripId)],
+);
+
+export const planVersions = pgTable(
+  "plan_version",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id").notNull().references(() => organizations.id),
+    tripId: uuid("trip_id").notNull().references(() => trips.id),
+    versionNo: integer("version_no").notNull(),
+    isCurrent: boolean("is_current").notNull().default(true),
+    createdBy: uuid("created_by").notNull().references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    /** Why the plan was changed; required from the second version. */
+    reason: text("reason"),
+    executor: text("executor").$type<"own" | "carrier">().notNull(),
+    vehicleId: uuid("vehicle_id").references(() => vehicles.id),
+    driverId: uuid("driver_id").references(() => drivers.id),
+    carrierOfferId: uuid("carrier_offer_id").references(() => carrierOffers.id),
+    /** When the truck leaves the loading point (for a carrier: derived from its confirmed arrival). */
+    departureAt: timestamp("departure_at", { withTimezone: true }).notNull(),
+    distanceM: integer("distance_m").notNull(),
+    durationS: integer("duration_s").notNull(),
+    metricsSource: text("metrics_source").$type<"2gis" | "synthetic" | "manual">().notNull(),
+    tollFiltered: boolean("toll_filtered").notNull().default(false),
+    profileComplete: boolean("profile_complete").notNull().default(true),
+    legsEstimated: boolean("legs_estimated").notNull().default(false),
+    /** Stops with the times and point data as they were when the plan was saved. */
+    stopsSnapshot: jsonb("stops_snapshot").$type<PlanStopSnapshot[]>().notNull(),
+    costLines: jsonb("cost_lines").$type<CostLine[]>().notNull(),
+    assumptions: jsonb("assumptions").$type<string[]>().notNull(),
+    totalKop: bigint("total_kop", { mode: "number" }).notNull(),
+    incomplete: boolean("incomplete").notNull().default(false),
+  },
+  (t) => [
+    unique("plan_version_no").on(t.tripId, t.versionNo),
+    uniqueIndex("plan_version_current").on(t.tripId).where(sql`${t.isCurrent}`),
+  ],
+);
+
+export const shareLinks = pgTable(
+  "share_link",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id").notNull().references(() => organizations.id),
+    tripId: uuid("trip_id").notNull().references(() => trips.id),
+    /** SHA-256 of the token; the token itself is shown once and never stored. */
+    tokenHash: text("token_hash").notNull().unique(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdBy: uuid("created_by").notNull().references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("share_link_trip_idx").on(t.tripId)],
+);
+
+export type TripEventType =
+  | "driver_confirmed"
+  | "loading_started"
+  | "loaded"
+  | "departed"
+  | "arrived"
+  | "unloaded"
+  | "stop_skipped"
+  | "completed"
+  | "fact_entered";
+
+export const tripEvents = pgTable(
+  "trip_event",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id").notNull().references(() => organizations.id),
+    tripId: uuid("trip_id").notNull().references(() => trips.id),
+    stopId: uuid("stop_id").references(() => tripStops.id),
+    type: text("type").$type<TripEventType>().notNull(),
+    at: timestamp("at", { withTimezone: true }).notNull(),
+    source: text("source").$type<"user" | "link">().notNull(),
+    /** User id, or the share link id for events from a driver link. */
+    actorId: text("actor_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("trip_event_trip_idx").on(t.tripId, t.at)],
+);
+
+export type ReasonCode = "shortage" | "damage" | "quality" | "docs_mismatch" | "refused" | "other";
+
+/** What the recipient accepted of one cargo row. A correction is a new version; old ones stay. */
+export const acceptances = pgTable(
+  "acceptance",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id").notNull().references(() => organizations.id),
+    tripCargoId: uuid("trip_cargo_id").notNull().references(() => tripCargo.id),
+    versionNo: integer("version_no").notNull(),
+    isCurrent: boolean("is_current").notNull().default(true),
+    acceptedMilli: bigint("accepted_milli", { mode: "number" }).notNull(),
+    rejectedMilli: bigint("rejected_milli", { mode: "number" }).notNull().default(0),
+    returnedMilli: bigint("returned_milli", { mode: "number" }).notNull().default(0),
+    reasonCode: text("reason_code").$type<ReasonCode>(),
+    /** How the acceptance was confirmed: an act number, a signature, a message. */
+    confirmation: text("confirmation"),
+    createdBy: uuid("created_by").notNull().references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("acceptance_version").on(t.tripCargoId, t.versionNo),
+    uniqueIndex("acceptance_current").on(t.tripCargoId).where(sql`${t.isCurrent}`),
+  ],
+);
+
+export type TaskType = "shortfall" | "rejection" | "return" | "bill_surcharge" | "other";
+
+export const tasks = pgTable(
+  "task",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id").notNull().references(() => organizations.id),
+    type: text("type").$type<TaskType>().notNull(),
+    tripId: uuid("trip_id").references(() => trips.id),
+    orderId: uuid("order_id").references(() => orders.id),
+    /** Set for tasks raised by an acceptance, so a new version can close them. */
+    tripCargoId: uuid("trip_cargo_id").references(() => tripCargo.id),
+    title: text("title").notNull(),
+    responsibleUserId: uuid("responsible_user_id").references(() => users.id),
+    dueAt: timestamp("due_at", { withTimezone: true }),
+    status: text("status").$type<"open" | "done">().notNull().default("open"),
+    resolution: text("resolution"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (t) => [index("task_status_idx").on(t.orgId, t.status), index("task_trip_idx").on(t.tripId)],
+);
