@@ -1,0 +1,10 @@
+node_modules
+.next
+.git
+.superpowers
+.env
+e2e
+tests
+test-results
+playwright-report
+docs

@@ -1,0 +1,44 @@
+# Start: SESSION_SECRET=<long random string> docker compose up --build
+# Open http://localhost:3000 . Add SEED_DEMO=true to create the demo organization on first start.
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tms
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tms}
+      POSTGRES_DB: tms
+    volumes:
+      - tms-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tms -d tms"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    environment:
+      DATABASE_URL: postgres://tms:${POSTGRES_PASSWORD:-tms}@db:5432/tms
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET to a long random string}
+      # false lets you sign in over plain HTTP (local trial). Set true behind HTTPS.
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      RUN_MIGRATIONS: "true"
+      SEED_DEMO: ${SEED_DEMO:-false}
+      SEED_PASSWORD: ${SEED_PASSWORD:-demo12345}
+      ROUTING_MODE: ${ROUTING_MODE:-synthetic}
+      TWOGIS_API_KEY: ${TWOGIS_API_KEY:-}
+      TWOGIS_KEY_EXPIRES_AT: ${TWOGIS_KEY_EXPIRES_AT:-}
+      TWOGIS_REQUEST_LIMIT: ${TWOGIS_REQUEST_LIMIT:-1000}
+      ROUTE_METRICS_STORAGE: ${ROUTE_METRICS_STORAGE:-plan}
+      EXPORT_PROVIDER_METRICS: ${EXPORT_PROVIDER_METRICS:-false}
+      MAP_TILE_URL: ${MAP_TILE_URL:-https://tile.openstreetmap.org/{z}/{x}/{y}.png}
+
+volumes:
+  tms-data:

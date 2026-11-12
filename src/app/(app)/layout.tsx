@@ -13,6 +13,7 @@ const NAV: (NavItem & { needs: Action })[] = [
   { href: "/import", label: "Импорт", needs: "planning.write" },
   { href: "/export", label: "Выгрузки", needs: "export.run" },
   { href: "/refs", label: "Справочники", needs: "refs.read" },
+  { href: "/settings", label: "Настройки", needs: "settings.manage" },
 ];
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
