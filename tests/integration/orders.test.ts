@@ -1,8 +1,10 @@
+import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Ctx } from "@/server/auth/context";
 import type { Db } from "@/server/db/client";
 import { cancelOrder, getOrder, listOrders, upsertOrder, type OrderInput } from "@/server/services/orders";
 import { createLocation } from "@/server/services/refs";
+import { addOrderToTrip, createTrip } from "@/server/services/trips";
 import { expectCode } from "../helpers/expectCode";
 import { makeOrg } from "../helpers/factories";
 import { withTestDb } from "../helpers/testDb";
@@ -150,4 +152,48 @@ describe("reading orders", () => {
     await cancelOrder(logist, orderId);
     expect((await getOrder(logist, orderId)).status).toBe("cancelled");
   });
+
+  it("does not lower a quantity below what a planner allocates at the same moment", async () => {
+    const { logist, order, locationId } = await setup();
+    const warehouse = (await createLocation(logist, { name: "Склад", lat: 55, lon: 83, tz: "Asia/Novosibirsk", kind: "warehouse" })).id;
+    const { orderId } = await upsertOrder(logist, order());
+    const [line] = (await getOrder(logist, orderId)).lines;
+    const { tripId } = await createTrip(logist, { originLocationId: warehouse });
+    void locationId;
+
+    // A planner is in the middle of allocating 8 of 10 (the line is locked); the import lowers the quantity to 6.
+    let importing: Promise<unknown> = Promise.resolve();
+    await logist.db.transaction(async (tx) => {
+      await tx.execute(sql`select id from order_line where id = ${line.id} for update`);
+      importing = upsertOrder(logist, order({ lines: [{ lineKey: "Вода 0,5", product: "Вода 0,5", unit: "палл", qtyMilli: 6_000, priceKop: 500_000, costKop: 300_000 }] })).catch((e) => e);
+      await new Promise((r) => setTimeout(r, 400));
+      await addOrderToTrip({ ...logist, db: tx as unknown as Db }, { tripId, expectedVersion: 1, items: [{ orderLineId: line.id, qtyMilli: 8_000 }] });
+    });
+
+    const outcome = await importing;
+    expect(outcome).toMatchObject({ code: "plan_conflict" });
+    expect((await getOrder(logist, orderId)).lines[0].qtyMilli).toBe(10_000);
+  });
+
+  it("refuses to move the delivery point of an order that already stands on a trip, but lets the window change", async () => {
+    const { logist, order } = await setup();
+    const warehouse = (await createLocation(logist, { name: "Склад", lat: 55, lon: 83, tz: "Asia/Novosibirsk", kind: "warehouse" })).id;
+    const other = (await createLocation(logist, { name: "Магазин 2", lat: 55.1, lon: 83.1, tz: "Asia/Novosibirsk", kind: "customer" })).id;
+    const { orderId } = await upsertOrder(logist, order());
+    const [line] = (await getOrder(logist, orderId)).lines;
+
+    // Not planned yet: the point can still be corrected.
+    await upsertOrder(logist, order({ locationId: other }));
+    await upsertOrder(logist, order());
+
+    const { tripId } = await createTrip(logist, { originLocationId: warehouse });
+    await addOrderToTrip(logist, { tripId, expectedVersion: 1, items: [{ orderLineId: line.id, qtyMilli: 4_000 }] });
+
+    await expectCode(upsertOrder(logist, order({ locationId: other })), "plan_conflict");
+    expect((await getOrder(logist, orderId)).location.id).not.toBe(other);
+
+    const later = new Date("2026-11-12T09:00:00Z");
+    expect((await upsertOrder(logist, order({ windowEnd: later }))).result).toBe("updated");
+  });
 });
+

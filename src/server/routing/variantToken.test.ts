@@ -8,7 +8,7 @@ const variant: SealedVariant = {
   legDurationsS: [1099],
   legsEstimated: true,
   tollFiltered: false,
-  profileComplete: true,
+  profileComplete: true, binding: "trip|stops"
 };
 const NOW = new Date("2026-11-12T03:00:00Z");
 

@@ -9,7 +9,7 @@ import { recordAcceptance } from "@/server/services/acceptance";
 import { closeTrip } from "@/server/services/close";
 import { recordEvent } from "@/server/services/execution";
 import { addAccrual, addExpense, createInvoice, recordPayment } from "@/server/services/finance";
-import { savePlan } from "@/server/services/planning";
+import { routeBinding, savePlan } from "@/server/services/planning";
 import { createCounterparty } from "@/server/services/refs";
 import { getTrip } from "@/server/services/trips";
 import { expectCode } from "../helpers/expectCode";
@@ -143,7 +143,7 @@ describe("trips", () => {
 
   async function planWithProviderMetrics() {
     const t = await makeAssignedTrip(db);
-    const token = sealVariant({ source: "2gis", distanceM: 9_000, durationS: 1_200, legDurationsS: [600, 600], legsEstimated: true, tollFiltered: false, profileComplete: true });
+    const token = sealVariant({ source: "2gis", distanceM: 9_000, durationS: 1_200, legDurationsS: [600, 600], legsEstimated: true, tollFiltered: false, profileComplete: true, binding: routeBinding(await getTrip(t.logist, t.tripId)) });
     await savePlan(t.logist, {
       tripId: t.tripId,
       expectedVersion: (await getTrip(t.logist, t.tripId)).version,
@@ -181,7 +181,7 @@ describe("trips", () => {
 describe("acceptance", () => {
   it("lists every version with the reason, the confirmation and who entered it", async () => {
     const t = await makeAssignedTrip(db);
-    await recordEvent(t.logist, { tripId: t.tripId, type: "driver_confirmed" });
+    await recordEvent(t.logist, { tripId: t.tripId, type: "loading_started", stopId: t.trip.stops[0].id });
     const cargo = t.trip.stops[1].cargo[0];
     await recordAcceptance(t.logist, { tripCargoId: cargo.id, acceptedMilli: 3_000, rejectedMilli: 0, returnedMilli: 0, reasonCode: "shortage", confirmation: "Акт № 5" });
     await recordAcceptance(t.logist, { tripCargoId: cargo.id, acceptedMilli: 5_000, rejectedMilli: 0, returnedMilli: 0 });
@@ -236,7 +236,7 @@ describe("isolation", () => {
   it("never includes another organization's rows", async () => {
     const a = await makeAssignedTrip(db);
     const b = await makeAssignedTrip(db);
-    await recordEvent(b.logist, { tripId: b.tripId, type: "driver_confirmed" });
+    await recordEvent(b.logist, { tripId: b.tripId, type: "loading_started", stopId: b.trip.stops[0].id });
     await recordAcceptance(b.logist, { tripCargoId: b.trip.stops[1].cargo[0].id, acceptedMilli: 5_000, rejectedMilli: 0, returnedMilli: 0 });
 
     // Trip numbers repeat between organizations, so look for the other side's order numbers.

@@ -73,7 +73,7 @@ describe("operational items", () => {
 
   it("flags an open shortage task until it is completed", async () => {
     const t = await makeAssignedTrip(db);
-    await recordEvent(t.logist, { tripId: t.tripId, type: "driver_confirmed" });
+    await recordEvent(t.logist, { tripId: t.tripId, type: "loading_started", stopId: t.trip.stops[0].id });
     await recordAcceptance(t.logist, { tripCargoId: t.trip.stops[1].cargo[0].id, acceptedMilli: 3_000, rejectedMilli: 0, returnedMilli: 0, reasonCode: "shortage" });
     const item = (await getTriage(t.logist)).find((i) => i.kind === "partial_acceptance")!;
     expect(item.title).toContain("принято 3 из 5");

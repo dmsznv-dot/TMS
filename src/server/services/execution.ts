@@ -113,7 +113,8 @@ export async function recordEvent(
       if (Object.keys(set).length > 0) await tx.db.update(tripStops).set(set).where(eq(tripStops.id, data.stopId));
     }
 
-    if (trip.status === "assigned") await moveTrip(tx, data.tripId, "in_progress");
+    // Confirming the assignment is not yet work on the route: the plan stays open to changes until a real event.
+    if (trip.status === "assigned" && data.type !== "driver_confirmed") await moveTrip(tx, data.tripId, "in_progress");
     if (data.type === "completed") await moveTrip(tx, data.tripId, "completed");
     else await completeIfResolved(tx, data.tripId);
 

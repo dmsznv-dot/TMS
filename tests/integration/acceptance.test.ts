@@ -20,7 +20,7 @@ afterAll(async () => {
   await close();
 });
 
-const startTrip = (t: AssignedTrip) => recordEvent(t.logist, { tripId: t.tripId, type: "driver_confirmed" });
+const startTrip = (t: AssignedTrip) => recordEvent(t.logist, { tripId: t.tripId, type: "loading_started", stopId: t.trip.stops[0].id });
 
 async function completeTrip(t: AssignedTrip) {
   for (const stop of t.trip.stops) {

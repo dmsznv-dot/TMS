@@ -18,6 +18,12 @@ export function rateLimit(key: string, perMinute: number, now: number = Date.now
   return true;
 }
 
+/** True when `perMinute` events were already counted for the key in the current window; counts nothing itself. */
+export function isRateLimited(key: string, perMinute: number, now: number = Date.now()): boolean {
+  const current = windows.get(key);
+  return !!current && now - current.start < WINDOW_MS && current.count >= perMinute;
+}
+
 export function resetRateLimits(): void {
   windows.clear();
 }

@@ -31,7 +31,9 @@ export type Env = Omit<z.infer<typeof envSchema>, "SESSION_SECRET" | "SESSION_CO
 const DEV_SECRET = "dev-only-session-secret-not-for-production";
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
-  const parsed = envSchema.parse(source);
+  // docker compose passes `VAR: ${VAR:-}` as an empty string; that means "not set".
+  const present = Object.fromEntries(Object.entries(source).filter(([, v]) => v !== ""));
+  const parsed = envSchema.parse(present);
   if (!parsed.SESSION_SECRET && parsed.NODE_ENV === "production") {
     throw new Error("SESSION_SECRET is required in production");
   }

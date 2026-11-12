@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import type { TripFacts } from "@/domain/tripStatus";
 import type { Ctx } from "../auth/context";
 import { checkCompleteness } from "@/domain/completeness";
@@ -40,7 +40,7 @@ export async function tripFacts(
   const [{ events }] = await ctx.db
     .select({ events: sql<number>`count(*)::int` })
     .from(tripEvents)
-    .where(and(eq(tripEvents.tripId, tripId), eq(tripEvents.orgId, ctx.orgId)));
+    .where(and(eq(tripEvents.tripId, tripId), eq(tripEvents.orgId, ctx.orgId), ne(tripEvents.type, "driver_confirmed")));
 
   return {
     hasCargoStops: cargo > 0,

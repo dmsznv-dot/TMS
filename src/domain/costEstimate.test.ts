@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { estimateCarrier, estimateOwn } from "./costEstimate";
+import { estimateCarrier, estimateOwn, readOtherCost, readToll } from "./costEstimate";
 
 const own = (patch: Partial<Parameters<typeof estimateOwn>[0]> = {}) =>
   estimateOwn({
@@ -64,5 +64,28 @@ describe("estimateCarrier", () => {
     const e = estimateCarrier({ rate: { amountKop: 41_000_00, vatIncluded: false, vatRateBp: 2200 }, expectedDowntimeKop: 3_000_00 });
     expect(e.totalKop).toBe(44_000_00);
     expect(e.lines.map((l) => l.category)).toEqual(["carrier", "downtime"]);
+  });
+});
+
+describe("reading cost inputs from a form", () => {
+  it("reads a toll amount in rubles", () => {
+    expect(readToll("amount", "1 500,50")).toEqual({ ok: true, toll: { kind: "amount", kop: 150_050 } });
+    expect(readToll("none", "garbage")).toEqual({ ok: true, toll: { kind: "none" } });
+    expect(readToll("unknown", "")).toEqual({ ok: true, toll: { kind: "unknown" } });
+  });
+
+  it("does not turn an unreadable or empty toll amount into zero rubles", () => {
+    for (const bad of ["", "1 500 р.", "abc", "-5"]) {
+      const result = readToll("amount", bad);
+      expect(result.ok, bad).toBe(false);
+    }
+  });
+
+  it("reads other costs, where empty means none, and refuses what cannot be read", () => {
+    expect(readOtherCost("")).toEqual({ ok: true, kop: 0 });
+    expect(readOtherCost("  ")).toEqual({ ok: true, kop: 0 });
+    expect(readOtherCost("200")).toEqual({ ok: true, kop: 20_000 });
+    expect(readOtherCost("двести").ok).toBe(false);
+    expect(readOtherCost("-1").ok).toBe(false);
   });
 });

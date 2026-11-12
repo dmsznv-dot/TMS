@@ -74,7 +74,7 @@ export default async function PlanningPage({ searchParams }: { searchParams: Pro
         <div className="space-y-6">
           <TripPanel trip={trip} trips={trips} origins={origins} canPlan={canPlan} />
           {trip && canMoney && (
-            <OffersPanel tripId={trip.id} tz={trip.stops[0].location.tz} carriers={carriers} offers={offers} canEdit={canPlan} />
+            <OffersPanel key={trip.id} tripId={trip.id} tz={trip.stops[0].location.tz} carriers={carriers} offers={offers} canEdit={canPlan} />
           )}
           <OrderQueue orders={orders} trip={trip ? { id: trip.id, version: trip.version, status: trip.status } : null} canPlan={canPlan} />
         </div>
@@ -82,6 +82,7 @@ export default async function PlanningPage({ searchParams }: { searchParams: Pro
         <div className="min-w-0">
           {canPlan && trip ? (
             <RoutePanel
+              key={trip.id}
               trip={trip}
               vehicles={vehicles}
               drivers={drivers}

@@ -1,4 +1,4 @@
-import { formatRub, netKop, type Money } from "./money";
+import { formatRub, netKop, parseRub, type Money } from "./money";
 
 export type ExpenseCategory = "fuel" | "driver" | "tolls" | "carrier" | "downtime" | "return" | "other";
 
@@ -13,6 +13,24 @@ export const EXPENSE_LABELS: Record<ExpenseCategory, string> = {
 };
 
 export type TollState = { kind: "unknown" } | { kind: "none" } | { kind: "amount"; kop: number };
+
+export type FormRead<T> = ({ ok: true } & T) | { ok: false; message: string };
+
+/** The toll choice of a form. An amount that cannot be read is an error: it is never taken as zero rubles. */
+export function readToll(kind: TollState["kind"], rub: string): FormRead<{ toll: TollState }> {
+  if (kind !== "amount") return { ok: true, toll: { kind } };
+  const kop = parseRub(rub);
+  if (kop == null || kop < 0) return { ok: false, message: "Сумма платных дорог — неотрицательное число в рублях, например 1500 или 1500,50" };
+  return { ok: true, toll: { kind: "amount", kop } };
+}
+
+/** Other costs of a form: an empty field means there are none; anything else must be a number of rubles. */
+export function readOtherCost(rub: string): FormRead<{ kop: number }> {
+  if (!rub.trim()) return { ok: true, kop: 0 };
+  const kop = parseRub(rub);
+  if (kop == null || kop < 0) return { ok: false, message: "Прочие расходы — неотрицательное число в рублях, например 200 или 200,50" };
+  return { ok: true, kop };
+}
 
 export type CostLine = {
   category: ExpenseCategory;

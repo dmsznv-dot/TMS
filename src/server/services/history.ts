@@ -1,7 +1,7 @@
-import { and, desc, eq, or, sql } from "drizzle-orm";
+import { and, desc, eq, notInArray, or, sql } from "drizzle-orm";
 import { DomainError } from "@/domain/errors";
 import { describeAudit } from "@/domain/historyLabels";
-import { requireCan, type Ctx } from "../auth/context";
+import { allows, requireCan, type Ctx } from "../auth/context";
 import { auditLog, trips, users } from "../db/schema";
 
 export type HistoryEntry = {
@@ -11,6 +11,9 @@ export type HistoryEntry = {
   /** What happened, in words. */
   line: string;
 };
+
+/** Entries about these carry amounts; roles without access to money do not see them. */
+const MONEY_ENTITIES = ["expense", "accrual", "invoice", "payment"];
 
 /**
  * Everything the audit log holds about the trip and what hangs on it
@@ -29,6 +32,7 @@ export async function listTripHistory(ctx: Ctx, tripId: string): Promise<History
       and(
         eq(auditLog.orgId, ctx.orgId),
         or(eq(auditLog.entityId, tripId), sql`${auditLog.after}->>'tripId' = ${tripId}`),
+        allows(ctx, "money.read") ? undefined : notInArray(auditLog.entity, MONEY_ENTITIES),
       ),
     )
     .orderBy(desc(auditLog.seq))

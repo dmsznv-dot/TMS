@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { buildComparison, type ComparisonRow, type Option } from "@/domain/comparison";
 import { estimateCarrier, estimateOwn, type CostEstimate, type TollState } from "@/domain/costEstimate";
@@ -80,9 +80,17 @@ function timeline(trip: TripView, departureAt: Date, legDurationsS: number[], bu
 
 const lastDeparture = (plans: StopPlan[], fallback: Date) => (plans.length > 0 ? plans[plans.length - 1].departAt : fallback);
 
-function openSealed(token: string): SealedVariant {
+/** Which trip and which stops, in which order, a calculated route belongs to. */
+export function routeBinding(trip: TripView): string {
+  return `${trip.id}|${trip.stops.map((s) => `${s.id}:${s.location.id}`).join(",")}`;
+}
+
+function openSealed(token: string, trip: TripView): SealedVariant {
   const sealed = openVariant(token);
   if (!sealed) throw new DomainError("variant_expired", "Расчёт маршрута устарел. Рассчитайте маршрут заново.");
+  if (sealed.binding !== routeBinding(trip)) {
+    throw new DomainError("variant_stale", "Маршрут рассчитан для другого рейса или другого состава остановок. Рассчитайте маршрут заново.");
+  }
   return sealed;
 }
 
@@ -201,6 +209,7 @@ export async function calculateRoutes(
       legsEstimated: v.legsEstimated,
       tollFiltered: data.avoidToll,
       profileComplete: answer.profileComplete,
+      binding: routeBinding(trip),
     }),
     stops: timeline(trip, data.departureAt, v.legDurationsS, settings.windowBufferMin),
     tollFiltered: data.avoidToll,
@@ -304,7 +313,7 @@ export async function listExecutorOptions(
   const settings = await getOrgSettings(ctx);
 
   const variants = data.variants.map((v, index) => {
-    const sealed = openSealed(v.token);
+    const sealed = openSealed(v.token, trip);
     const plans = timeline(trip, data.departureAt, sealed.legDurationsS, settings.windowBufferMin);
     return { index, sealed, plans, toll: resolveToll(v.toll ?? { kind: "unknown" }, sealed.tollFiltered), otherKop: v.otherKop ?? 0 };
   });
@@ -464,7 +473,7 @@ export async function savePlan(
     const points = routePoints(trip);
     let route: SealedVariant;
     if (data.route.kind === "sealed") {
-      route = openSealed(data.route.token);
+      route = openSealed(data.route.token, trip);
     } else {
       route = {
         source: "synthetic",
@@ -474,6 +483,7 @@ export async function savePlan(
         legsEstimated: true,
         tollFiltered: false,
         profileComplete: vehicle ? isTruckProfileComplete(truckProfileOf(vehicle).profile) : true,
+        binding: routeBinding(trip),
       };
     }
     const metricsSource = data.route.kind === "manual" ? "manual" : route.source;
@@ -488,6 +498,17 @@ export async function savePlan(
     const departureAt = departureFor(data.departureAt, route.legDurationsS, offer);
     const plans = timeline(trip, departureAt, route.legDurationsS, settings.windowBufferMin);
     const tripDurationS = Math.round((lastDeparture(plans, departureAt).getTime() - departureAt.getTime()) / 1000);
+
+    // The options screen leaves out trucks that are too small or busy; saving must hold to the same rule,
+    // because manual figures and two planners with the same screen open both get past the screen.
+    if (vehicle) {
+      const problem = capacityProblem(vehicle, await cargoTotals(tx, data.tripId));
+      if (problem) throw new DomainError("vehicle_capacity", `Машина ${vehicle.plate} не подходит: ${problem}`);
+      await tx.db.execute(sql`select pg_advisory_xact_lock(hashtext(${`vehicle:${vehicle.id}`}))`);
+      const busy = await busyVehicles(tx, data.tripId, departureAt, lastDeparture(plans, departureAt));
+      if (busy.has(vehicle.id)) throw new DomainError("vehicle_busy", `Машина ${vehicle.plate} занята на другом рейсе в это время`);
+    }
+
     const toll = resolveToll(data.toll, route.tollFiltered);
     const cost: CostEstimate = offer
       ? estimateCarrier({
@@ -577,13 +598,30 @@ export async function assignTrip(ctx: Ctx, input: { tripId: string; expectedVers
   return inTransaction(ctx, async (tx) => {
     const moved = await moveTrip(tx, input.tripId, "assigned", { expectedVersion: input.expectedVersion });
     const [current] = await tx.db
-      .select({ id: planVersions.id })
+      .select({ id: planVersions.id, executor: planVersions.executor })
       .from(planVersions)
       .where(and(eq(planVersions.tripId, input.tripId), eq(planVersions.isCurrent, true)));
-    await tx.db
-      .update(trips)
-      .set({ baselinePlanVersionId: current.id })
-      .where(and(eq(trips.id, input.tripId), eq(trips.orgId, tx.orgId), isNull(trips.baselinePlanVersionId)));
+    const [trip] = await tx.db
+      .select({ baselinePlanVersionId: trips.baselinePlanVersionId })
+      .from(trips)
+      .where(and(eq(trips.id, input.tripId), eq(trips.orgId, tx.orgId)));
+    // The baseline is the plan the trip was first assigned with, so re-planning does not hide a deviation.
+    // When the kind of executor changes (own truck or carrier) the cost categories differ completely, so the old
+    // plan would only produce a fictitious saving or overrun: the baseline moves to the plan now in force.
+    let keep = trip.baselinePlanVersionId != null;
+    if (keep) {
+      const [baseline] = await tx.db
+        .select({ executor: planVersions.executor })
+        .from(planVersions)
+        .where(eq(planVersions.id, trip.baselinePlanVersionId!));
+      keep = baseline?.executor === current.executor;
+    }
+    if (!keep) {
+      await tx.db
+        .update(trips)
+        .set({ baselinePlanVersionId: current.id })
+        .where(and(eq(trips.id, input.tripId), eq(trips.orgId, tx.orgId)));
+    }
     return moved;
   });
 }

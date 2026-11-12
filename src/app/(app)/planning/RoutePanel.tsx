@@ -22,9 +22,9 @@ import {
   tdClass,
   thClass,
 } from "@/components/ui";
-import type { TollState } from "@/domain/costEstimate";
+import { readOtherCost, readToll, type TollState } from "@/domain/costEstimate";
 import { formatDuration, formatKm } from "@/domain/format";
-import { formatRub, parseRub } from "@/domain/money";
+import { formatRub } from "@/domain/money";
 import { formatInTz } from "@/domain/time";
 import type { Quota } from "@/server/routing/quota";
 import type { OfferView } from "@/server/services/offers";
@@ -110,11 +110,24 @@ export function RoutePanel({
     (o) => o.status === "quoted" || o.status === "confirmed",
   );
 
-  const tollState = (kind = tollKind, rub = tollRub): TollState => {
-    if (kind !== "amount") return { kind };
-    return { kind: "amount", kop: parseRub(rub) ?? 0 };
+  /** Toll and other costs as typed; an unreadable amount is shown as an error and is never taken as zero. */
+  const costs = (kind = tollKind): { toll: TollState; other: number } | null => {
+    const toll = readToll(kind, tollRub);
+    if (!toll.ok) {
+      setError(toll.message);
+      return null;
+    }
+    const other = readOtherCost(otherRub);
+    if (!other.ok) {
+      setError(other.message);
+      return null;
+    }
+    return { toll: toll.toll, other: other.kop };
   };
-  const otherKop = (rub = otherRub) => (rub.trim() ? (parseRub(rub) ?? 0) : 0);
+  const reloadOptions = (list: Variants, kind = tollKind) => {
+    const c = costs(kind);
+    if (c) loadOptions(list, c.toll, c.other);
+  };
 
   function loadOptions(list: Variants, toll: TollState, other: number) {
     startTransition(async () => {
@@ -151,7 +164,7 @@ export function RoutePanel({
       setExcluded([]);
       setChosenId(null);
       if (result.data.result.ok)
-        loadOptions(result.data.result.variants, tollState(), otherKop());
+        reloadOptions(result.data.result.variants);
     });
   }
 
@@ -189,6 +202,8 @@ export function RoutePanel({
       }
     }
 
+    const c = costs();
+    if (!c) return;
     startTransition(async () => {
       const result = await savePlanAction({
         tripId: trip.id,
@@ -197,8 +212,8 @@ export function RoutePanel({
         departureLocal: departure,
         executor,
         route,
-        toll: tollState(),
-        otherKop: otherKop(),
+        toll: c.toll,
+        otherKop: c.other,
       });
       if (!result.ok) return setError(result.message);
       setSaved(`План сохранён: версия ${result.data.versionNo}`);
@@ -584,7 +599,7 @@ export function RoutePanel({
                   const kind = e.target.value as TollState["kind"];
                   setTollKind(kind);
                   if (variants.length > 0 && !manual)
-                    loadOptions(variants, tollState(kind), otherKop());
+                    reloadOptions(variants, kind);
                 }}
               >
                 {TOLL_CHOICES.map((c) => (
@@ -607,7 +622,7 @@ export function RoutePanel({
                   onBlur={() =>
                     variants.length > 0 &&
                     !manual &&
-                    loadOptions(variants, tollState(), otherKop())
+                    reloadOptions(variants)
                   }
                 />
               </label>
@@ -622,7 +637,7 @@ export function RoutePanel({
                 onBlur={() =>
                   variants.length > 0 &&
                   !manual &&
-                  loadOptions(variants, tollState(), otherKop())
+                  reloadOptions(variants)
                 }
               />
             </label>

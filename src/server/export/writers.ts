@@ -8,7 +8,8 @@ const BOM = "﻿";
 function csvCell(value: Cell, kind: Column["kind"]): string {
   if (value === null) return "";
   if (typeof value === "number") return (kind === "money" ? value.toFixed(2) : String(value)).replace(".", ",");
-  return value;
+  // Text that starts like a formula is shown as text, not run, when the file is opened in a spreadsheet.
+  return /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
 }
 
 /** UTF-8 with a byte order mark and semicolons, so it opens correctly in Excel. */

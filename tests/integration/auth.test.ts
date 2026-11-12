@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { expectCode } from "../helpers/expectCode";
+import { resetRateLimits } from "@/server/auth/rateLimit";
 import { ctxFromSessionToken, login, logout } from "@/server/auth/session";
 import type { Db } from "@/server/db/client";
 import { auditLog, sessions } from "@/server/db/schema";
@@ -28,6 +29,24 @@ afterAll(async () => {
 
 
 describe("login", () => {
+  it("stops password guessing: after ten failed attempts in a minute even the right password is refused", async () => {
+    resetRateLimits();
+    await createOrganization(db, { orgName: "Guess Org", adminEmail: "guess@example.test", adminPassword: "correct-horse", adminName: "G" });
+    for (let i = 0; i < 10; i++) expect(await login(db, "guess@example.test", `wrong-${i}`)).toBeNull();
+    await expectCode(login(db, "guess@example.test", "correct-horse"), "rate_limited");
+    // Another address is not affected, and the unknown address is counted too (it must not reveal who has an account).
+    expect(await login(db, "other@example.test", "x")).toBeNull();
+    for (let i = 0; i < 10; i++) await login(db, "ghost@example.test", "x");
+    await expectCode(login(db, "ghost@example.test", "x"), "rate_limited");
+    resetRateLimits();
+  });
+
+  it("does not hold back a person who signs in correctly again and again", async () => {
+    resetRateLimits();
+    await createOrganization(db, { orgName: "Busy Org", adminEmail: "busy@example.test", adminPassword: "correct-horse", adminName: "B" });
+    for (let i = 0; i < 25; i++) expect(await login(db, "busy@example.test", "correct-horse")).not.toBeNull();
+  });
+
   it("logs in with the correct password only", async () => {
     await createOrganization(db, {
       orgName: "Login Org",

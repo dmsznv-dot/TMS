@@ -123,15 +123,18 @@ describe("driver view", () => {
 });
 
 describe("events", () => {
-  it("lets the driver confirm, and the first event moves the trip to in progress", async () => {
+  it("lets the driver confirm without starting the trip; the first real event does", async () => {
     const t = await makeAssignedTrip(db);
     const { ctx } = await linkFor(t);
     expect((await getTrip(t.logist, t.tripId)).status).toBe("assigned");
 
     await recordEvent(ctx, { tripId: t.tripId, type: "driver_confirmed" });
-
-    expect((await getTrip(t.logist, t.tripId)).status).toBe("in_progress");
+    // Confirming the assignment the evening before must not freeze the plan.
+    expect((await getTrip(t.logist, t.tripId)).status).toBe("assigned");
     expect((await getDriverView(ctx)).confirmed).toBe(true);
+
+    await recordEvent(ctx, { tripId: t.tripId, type: "loaded", stopId: t.trip.stops[0].id });
+    expect((await getTrip(t.logist, t.tripId)).status).toBe("in_progress");
   });
 
   it("fills actual times on stops and completes the trip when every stop is resolved", async () => {

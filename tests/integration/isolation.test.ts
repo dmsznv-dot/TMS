@@ -75,7 +75,7 @@ async function buildWorld(): Promise<{ world: World; orgId: string }> {
   const [, shopA] = t.trip.stops;
   const cargo = shopA.cargo[0];
 
-  await execution.recordEvent(logist, { tripId: t.tripId, type: "driver_confirmed" });
+  await execution.recordEvent(logist, { tripId: t.tripId, type: "loading_started", stopId: t.trip.stops[0].id });
   await acceptance.recordAcceptance(logist, { tripCargoId: cargo.id, acceptedMilli: 3_000, rejectedMilli: 0, returnedMilli: 0, reasonCode: "shortage" });
   const [task] = await tasks.listTasks(logist, { tripId: t.tripId });
 
@@ -283,6 +283,7 @@ const EXEMPT: Record<string, string> = {
   createOrganization: "creates a new organization from nothing; there is no other organization to reach",
   truckProfileOf: "pure function of a row it is given",
   isPlanStale: "pure function of two views it is given",
+  routeBinding: "pure function of a trip view it is given",
   ctxFromShareToken: "the token is the credential: a valid token reaches exactly its own trip (see execution tests)",
   processNextJob: "the queue worker acts for the organization of each job it takes, not for a caller",
 };

@@ -16,6 +16,8 @@ export const sealedVariantSchema = z.object({
   legsEstimated: z.boolean(),
   tollFiltered: z.boolean(),
   profileComplete: z.boolean(),
+  /** The trip and the stops the route was calculated for; see `routeBinding`. */
+  binding: z.string().min(1),
 });
 export type SealedVariant = z.infer<typeof sealedVariantSchema>;
 

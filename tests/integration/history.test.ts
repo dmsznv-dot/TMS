@@ -39,6 +39,22 @@ describe("trip history", () => {
     ]);
   });
 
+  it("shows no amounts to a role that has no access to money", async () => {
+    const t = await makeAssignedTrip(db);
+    const finance = await t.org.as("finance");
+    const { id: customerId } = await createCounterparty(t.logist, { name: "ООО Сумма", kind: "customer" });
+    await addExpense(finance, { tripId: t.tripId, category: "fuel", amountKop: 1_200_000, date: new Date() });
+    await addAccrual(finance, { tripId: t.tripId, kind: "revenue", description: "Доставка", amountKop: 5_000_000, vatIncluded: false });
+    await createInvoice(finance, { direction: "out", counterpartyId: customerId, tripId: t.tripId, number: "SUM-1", date: new Date(), dueDate: new Date(), amountKop: 5_000_000, vatIncluded: false });
+
+    const warehouse = await t.org.as("warehouse");
+    const seen = (await lines(warehouse, t.tripId)).join("\n");
+    expect(seen).not.toMatch(/₽|Расход|Счёт|Начисление/);
+    expect(seen).toContain("Рейс создан");
+    // Finance still sees them.
+    expect((await lines(finance, t.tripId)).join("\n")).toContain("12 000,00 ₽");
+  });
+
   it("includes who did it and when", async () => {
     const t = await makeAssignedTrip(db);
     const [latest] = await listTripHistory(t.logist, t.tripId);
@@ -103,7 +119,7 @@ describe("trip history", () => {
   it("does not mix in the history of another trip", async () => {
     const a = await makeAssignedTrip(db);
     const b = await makeAssignedTrip(db, a.org);
-    await recordEvent(a.logist, { tripId: a.tripId, type: "driver_confirmed" });
+    await recordEvent(a.logist, { tripId: a.tripId, type: "loading_started", stopId: a.trip.stops[0].id });
     expect(await lines(b.logist, b.tripId)).not.toContain("Отметка: водитель подтвердил назначение");
   });
 

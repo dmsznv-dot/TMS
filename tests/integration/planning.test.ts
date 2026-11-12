@@ -10,6 +10,7 @@ import type { RouteRequest, RoutingProvider } from "@/server/routing/types";
 import {
   assignTrip,
   calculateRoutes,
+  routeBinding,
   isPlanStale,
   listExecutorOptions,
   listPlanVersions,
@@ -376,6 +377,39 @@ describe("executor options", () => {
     expect(rows.some((r) => r.vehicleId === s.vehicleId)).toBe(true);
   });
 
+  it("refuses to save a plan on a truck that is busy or too small, even with manual figures", async () => {
+    const s = await setup();
+    const first = await tripWithCargo(s, "З-1");
+    await plan(s, first.tripId, first.version);
+
+    // Same truck, overlapping time: the options screen would not offer it, and saving must not accept it either.
+    const second = await tripWithCargo(s, "З-2");
+    await expectCode(
+      plan(s, second.tripId, second.version, { departureAt: new Date("2026-11-12T03:30:00Z"), route: { kind: "manual", distanceM: 9_000, durationS: 1_200 } }),
+      "vehicle_busy",
+    );
+    // Later the same day it is free.
+    await plan(s, second.tripId, second.version, { departureAt: new Date("2026-11-12T12:00:00Z"), route: { kind: "manual", distanceM: 9_000, durationS: 1_200 } });
+
+    const { id: small } = await createVehicle(s.logist, { plate: "М004ММ154", capacityPallets: 1, ...FULL_PROFILE });
+    const big = await createTrip(s.logist, { originLocationId: s.warehouse });
+    const o = await makeOrderLine(s.logist, { locationId: s.shopA, number: "З-Б", palletsMilli: 10_000 });
+    const added = await addOrderToTrip(s.logist, { tripId: big.tripId, expectedVersion: 1, items: [{ orderLineId: o.lineId, qtyMilli: 10_000 }] });
+    await expectCode(
+      savePlan(s.logist, {
+        tripId: big.tripId,
+        expectedVersion: added.version,
+        reason: null,
+        executor: { kind: "own", vehicleId: small, driverId: s.driverId },
+        departureAt: new Date("2026-11-13T03:00:00Z"),
+        route: { kind: "manual", distanceM: 9_000, durationS: 1_200 },
+        toll: { kind: "none" },
+        otherKop: 0,
+      }),
+      "vehicle_capacity",
+    );
+  });
+
   it("rejects a forged or expired variant", async () => {
     const s = await setup();
     const { tripId } = await tripWithCargo(s);
@@ -493,6 +527,7 @@ describe("savePlan", () => {
       legsEstimated: true,
       tollFiltered: false,
       profileComplete: true,
+      binding: routeBinding(await getTrip(s.logist, t.tripId)),
     });
     await expectCode(plan(s, t.tripId, t.version, { route: { kind: "sealed", token } }), "provider_metrics_not_storable");
 
@@ -511,6 +546,7 @@ describe("savePlan", () => {
       legsEstimated: true,
       tollFiltered: false,
       profileComplete: false,
+      binding: routeBinding(await getTrip(s.logist, t.tripId)),
     });
     await plan(s, t.tripId, t.version, { route: { kind: "sealed", token } });
     const [v1] = await listPlanVersions(s.logist, t.tripId);
@@ -529,8 +565,23 @@ describe("savePlan", () => {
       legsEstimated: false,
       tollFiltered: false,
       profileComplete: true,
+      binding: routeBinding(await getTrip(s.logist, t.tripId)),
     });
     await expectCode(plan(s, t.tripId, t.version, { route: { kind: "sealed", token } }), "variant_stale");
+  });
+
+  it("rejects a route calculated for another trip, even with the same number of stops", async () => {
+    const s = await setup();
+    const a = await tripWithCargo(s, "З-A");
+    const b = await tripWithCargo(s, "З-B");
+    const [variant] = await calculate(s, a.tripId);
+    await expectCode(plan(s, b.tripId, b.version, { route: { kind: "sealed", token: variant.token } }), "variant_stale");
+    await expectCode(
+      listExecutorOptions(s.logist, { tripId: b.tripId, departureAt: DEPART, variants: [{ token: variant.token }] }),
+      "variant_stale",
+    );
+    // For its own trip the same token is fine.
+    await plan(s, a.tripId, a.version, { route: { kind: "sealed", token: variant.token } });
   });
 
   it("rejects a stale trip version", async () => {
@@ -634,6 +685,26 @@ describe("assignment", () => {
     const final = await getTrip(s.logist, t.tripId);
     expect(final.status).toBe("assigned");
     expect(final.baselinePlanVersionId).toBe(v1.id);
+  });
+
+  it("moves the baseline to the new plan when the kind of executor changes, because the costs no longer compare", async () => {
+    const s = await setup();
+    const t = await tripWithCargo(s);
+    const { offerId } = await addCarrierOffer(s.logist, { tripId: t.tripId, carrierId: s.carrierId, rateKop: 41_000_00, vatIncluded: false });
+    await setOfferStatus(s.logist, { offerId, status: "confirmed" });
+    const viaCarrier = await plan(s, t.tripId, t.version, { executor: { kind: "carrier", offerId } });
+    await assignTrip(s.logist, { tripId: t.tripId, expectedVersion: viaCarrier.tripVersion });
+    const [carrierPlan] = await listPlanVersions(s.logist, t.tripId);
+    expect((await getTrip(s.logist, t.tripId)).baselinePlanVersionId).toBe(carrierPlan.id);
+
+    // The carrier drops out; the own truck takes the trip.
+    const assigned = await getTrip(s.logist, t.tripId);
+    const own = await plan(s, t.tripId, assigned.version, { reason: "Подрядчик отказался" });
+    await assignTrip(s.logist, { tripId: t.tripId, expectedVersion: own.tripVersion });
+
+    const versions = await listPlanVersions(s.logist, t.tripId);
+    const ownPlan = versions.find((v) => v.executor === "own")!;
+    expect((await getTrip(s.logist, t.tripId)).baselinePlanVersionId).toBe(ownPlan.id);
   });
 
   it("returns an assigned trip to planned when the executor changes, not when only the time does", async () => {

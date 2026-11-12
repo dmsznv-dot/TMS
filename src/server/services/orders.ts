@@ -181,8 +181,27 @@ export async function upsertOrder(
       existing.windowStart.getTime() !== header.windowStart.getTime() ||
       existing.windowEnd.getTime() !== header.windowEnd.getTime();
 
-    const storedLines = await tx.db.select().from(orderLines).where(eq(orderLines.orderId, existing.id));
+    // Locked before the allocations are read: a planner who is allocating this line right now
+    // commits first, and the check below then sees what they allocated.
+    const storedLines = await tx.db.select().from(orderLines).where(eq(orderLines.orderId, existing.id)).for("update");
     const byKey = new Map(storedLines.map((l) => [l.lineKey, l]));
+
+    // The stops of a trip were made from the delivery point the order had then; moving the point under it
+    // would leave the plan, the driver's page and the route links on the old address without a warning.
+    if (existing.locationId !== header.locationId && storedLines.length > 0) {
+      const [onTrip] = await tx.db
+        .select({ id: tripCargo.id })
+        .from(tripCargo)
+        .innerJoin(trips, eq(trips.id, tripCargo.tripId))
+        .where(and(eq(tripCargo.orgId, tx.orgId), inArray(tripCargo.orderLineId, storedLines.map((l) => l.id)), ne(trips.status, "cancelled")))
+        .limit(1);
+      if (onTrip) {
+        throw new DomainError(
+          "plan_conflict",
+          "Заказ уже стоит в рейсе: точку доставки нельзя изменить. Уберите заказ из рейса или отмените рейс и загрузите файл снова.",
+        );
+      }
+    }
     const progress = await lineProgress(tx, storedLines.map((l) => l.id));
 
     for (const raw of data.lines) {
